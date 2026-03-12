@@ -1,3 +1,672 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <!-- スマホ対応 viewport -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>テトリス</title>
 
+  <style>
+    /* ===== リセット ===== */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
 
+    body {
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Meiryo", sans-serif;
+      background:
+        radial-gradient(circle at top, #1d2755 0, #050818 55%, #02030a 100%);
+      color: #fff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow-x: hidden;        /* 横スクロール禁止 */
+    }
 
+    /* ===== 共通レイアウト（PC 基準）===== */
+
+    .app-shell {
+      width: 100%;
+      max-width: 1200px;
+      padding: 24px;
+    }
+
+    /* PC では「左右デコ + 中央ゲーム」構成 */
+    .app-frame {
+      display: grid;
+      grid-template-columns: 1fr minmax(0, 920px) 1fr;
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    /* 左右ネオン背景パネル（PC用） */
+    .side-deco {
+      border-radius: 24px;
+      background: radial-gradient(circle at center, rgba(0,255,255,0.16), transparent 70%);
+      opacity: 0.7;
+    }
+
+    /* 中央ゲームカード */
+    .game-card {
+      border-radius: 24px;
+      padding: 24px 28px;
+      background:
+        radial-gradient(circle at top left, rgba(0,255,255,0.12), transparent 60%),
+        radial-gradient(circle at bottom right, rgba(123,47,247,0.18), transparent 65%),
+        rgba(10, 13, 32, 0.95);
+      box-shadow:
+        0 0 40px rgba(0, 0, 0, 0.8),
+        0 0 0 1px rgba(0, 255, 255, 0.25);
+    }
+
+    /* ゲームコンテナ（PC：ボード + サイドパネル 2カラム） */
+    .game-container {
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+      justify-content: center;
+      width: 100%;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    /* ===== ゲーム盤面 ===== */
+    .board-wrapper {
+      flex: 0 0 360px;
+      max-width: 360px;
+      border-radius: 18px;
+      padding: 8px;
+      background: rgba(3, 8, 24, 0.95);
+      box-shadow:
+        0 0 32px rgba(0, 255, 255, 0.25),
+        inset 0 0 20px rgba(0, 0, 0, 0.7);
+    }
+
+    /* 盤面キャンバス（内部ロジック上は 10x20 想定） */
+    canvas#board {
+      display: block;
+      width: 100%;
+      height: 100%;
+      aspect-ratio: 1 / 2; /* 見た目比率のみ固定 */
+      background: radial-gradient(circle at top, #050816 0, #000 60%);
+      border-radius: 14px;
+      box-shadow: 0 0 18px rgba(0, 255, 255, 0.4);
+    }
+
+    /* ===== 右側情報パネル（PC）===== */
+    .side-panel {
+      flex: 0 0 220px;
+      max-width: 220px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .panel-box {
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(8, 12, 30, 0.95);
+      box-shadow:
+        0 0 16px rgba(0, 0, 0, 0.8),
+        0 0 0 1px rgba(0, 255, 255, 0.12);
+    }
+
+    .panel-box h3 {
+      font-size: 12px;
+      margin-bottom: 6px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      opacity: 0.7;
+    }
+
+    .panel-box .value {
+      font-size: 28px;
+      font-weight: 700;
+      color: #00e5ff;
+      text-shadow: 0 0 8px rgba(0, 255, 255, 0.7);
+    }
+
+    canvas#next {
+      display: block;
+      margin: 4px auto 0;
+      width: 160px;
+      height: 160px;
+      background: #050815;
+      border-radius: 10px;
+      box-shadow: 0 0 12px rgba(0, 0, 0, 0.9);
+    }
+
+    .button-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 10px 16px;
+      border-radius: 999px;
+      border: none;
+      color: #fff;
+      font-weight: 600;
+      letter-spacing: 1px;
+      cursor: pointer;
+      background: linear-gradient(135deg, #00bcd4, #7b2ff7);
+      box-shadow: 0 0 16px rgba(0, 188, 212, 0.6);
+      white-space: nowrap;   /* ボタン文字が切れないようにする */
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+      box-shadow: 0 0 10px rgba(0, 188, 212, 0.4);
+    }
+
+    /* ===== スマホレイアウト（1カラム縦並び） ===== */
+    @media (max-width: 768px) {
+      body {
+        align-items: flex-start;
+        padding: 16px 0;
+      }
+
+      .app-shell {
+        padding: 12px 8px 24px;
+      }
+
+      /* 装飾パネルは非表示（ゲーム盤面優先） */
+      .side-deco {
+        display: none;
+      }
+
+      .app-frame {
+        display: block;
+      }
+
+      .game-card {
+        padding: 12px 10px 16px;
+        border-radius: 0;
+        box-shadow: none;
+        background:
+          radial-gradient(circle at top, rgba(0,255,255,0.2), transparent 55%),
+          rgba(5, 8, 24, 0.97);
+      }
+
+      /* 1,2,5. スマホでは 1 カラム縦並び & 固定幅撤廃 */
+      .game-container {
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+        width: 100%;
+        max-width: none;
+      }
+
+      /* 6. board-wrapper は width: min(92vw, 420px)、aspect-ratio: 1 / 2 */
+      .board-wrapper {
+        width: min(92vw, 420px);
+        max-width: 420px;
+        padding: 6px;
+      }
+
+      /* 7. canvas#board は width:100%, height:100%（aspect-ratioに従う） */
+      canvas#board {
+        width: 100%;
+        height: 100%;
+        aspect-ratio: 1 / 2;
+      }
+
+      /* 3,8. 盤面の下に：スコア/レベル/ライン → ネクスト → ボタン */
+      .side-panel {
+        width: 100%;
+        max-width: 420px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+      }
+
+      .panel-box {
+        width: 100%;
+      }
+
+      .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .stat-grid .panel-box {
+        width: 100%;
+      }
+
+      canvas#next {
+        width: 100%;
+        height: auto;
+        max-height: 220px;
+      }
+
+      .btn {
+        font-size: 14px;
+        padding-block: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <div class="app-frame">
+      <!-- PC用 左右デコ（スマホでは display:none） -->
+      <div class="side-deco"></div>
+
+      <!-- 中央ゲームカード -->
+      <main class="game-card">
+        <div class="game-container">
+          <!-- 盤面：PCでは左、スマホでは最上段 -->
+          <section class="board-wrapper">
+            <!-- JS側で width/height を設定していても OK。CSS でリサイズ。 -->
+            <canvas id="board"></canvas>
+          </section>
+
+          <!-- 情報パネル：スコア / レベル / ライン / ネクスト / ボタン -->
+          <aside class="side-panel">
+            <!-- スコア / レベル / ライン は PC では縦、スマホでは 3列グリッド -->
+            <div class="stat-grid">
+              <div class="panel-box">
+                <h3>スコア</h3>
+                <div class="value" id="score">0</div>
+              </div>
+              <div class="panel-box">
+                <h3>レベル</h3>
+                <div class="value" id="level">1</div>
+              </div>
+              <div class="panel-box">
+                <h3>ライン</h3>
+                <div class="value" id="lines">0</div>
+              </div>
+            </div>
+
+            <!-- ネクスト -->
+            <div class="panel-box">
+              <h3>ネクスト</h3>
+              <canvas id="next" width="160" height="160"></canvas>
+            </div>
+
+            <!-- 操作ボタン -->
+            <div class="panel-box">
+              <div class="button-group">
+                <button type="button" class="btn" id="startBtn">スタート</button>
+                <button type="button" class="btn" id="pauseBtn">ポーズ</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </main>
+
+      <div class="side-deco"></div>
+    </div>
+  </div>
+
+  <!-- ゲームロジック JavaScript -->
+  <script>
+    // DOM構築完了後に初期化
+    window.addEventListener('DOMContentLoaded', () => {
+      const boardCanvas = document.getElementById('board');
+      const nextCanvas  = document.getElementById('next');
+      const scoreEl     = document.getElementById('score');
+      const levelEl     = document.getElementById('level');
+      const linesEl     = document.getElementById('lines');
+      const startBtn    = document.getElementById('startBtn');
+      const pauseBtn    = document.getElementById('pauseBtn');
+
+      if (!boardCanvas || !nextCanvas || !scoreEl || !levelEl || !linesEl || !startBtn || !pauseBtn) {
+        console.error('必要な要素が見つかりません');
+        return;
+      }
+
+      const COLS = 10;
+      const ROWS = 20;
+      const BLOCK_SIZE = 24;      // 内部解像度（CSSで拡大表示）
+      const NEXT_SIZE  = 20;
+
+      // キャンバス内部サイズ（表示サイズとは独立）
+      boardCanvas.width  = COLS * BLOCK_SIZE;
+      boardCanvas.height = ROWS * BLOCK_SIZE;
+      nextCanvas.width   = 5 * NEXT_SIZE;
+      nextCanvas.height  = 5 * NEXT_SIZE;
+
+      const ctx  = boardCanvas.getContext('2d');
+      const nctx = nextCanvas.getContext('2d');
+
+      // テトロミノ定義
+      const SHAPES = {
+        I: [[1, 1, 1, 1]],
+        O: [
+          [1, 1],
+          [1, 1]
+        ],
+        T: [
+          [0, 1, 0],
+          [1, 1, 1]
+        ],
+        S: [
+          [0, 1, 1],
+          [1, 1, 0]
+        ],
+        Z: [
+          [1, 1, 0],
+          [0, 1, 1]
+        ],
+        J: [
+          [1, 0, 0],
+          [1, 1, 1]
+        ],
+        L: [
+          [0, 0, 1],
+          [1, 1, 1]
+        ]
+      };
+
+      const COLORS = {
+        I: '#00e5ff',
+        O: '#ffeb3b',
+        T: '#ce93d8',
+        S: '#69f0ae',
+        Z: '#ff5252',
+        J: '#448aff',
+        L: '#ffab40'
+      };
+
+      // 状態
+      let board;
+      let current;
+      let nextPiece;
+      let score;
+      let level;
+      let lines;
+      let dropInterval;
+      let lastDropTime;
+      let animationId;
+      let paused = false;
+      let gameOver = false;
+
+      function createEmptyBoard() {
+        return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+      }
+
+      function randomPieceType() {
+        const keys = Object.keys(SHAPES);
+        return keys[Math.floor(Math.random() * keys.length)];
+      }
+
+      function createPiece(type) {
+        const shape = SHAPES[type];
+        return {
+          type,
+          shape: shape.map(row => [...row]),
+          x: Math.floor((COLS - shape[0].length) / 2),
+          y: 0
+        };
+      }
+
+      function rotate(shape) {
+        const rows = shape.length;
+        const cols = shape[0].length;
+        const result = [];
+        for (let x = 0; x < cols; x++) {
+          const row = [];
+          for (let y = rows - 1; y >= 0; y--) {
+            row.push(shape[y][x]);
+          }
+          result.push(row);
+        }
+        return result;
+      }
+
+      function collide(b, piece) {
+        const { shape, x: px, y: py } = piece;
+        for (let y = 0; y < shape.length; y++) {
+          for (let x = 0; x < shape[y].length; x++) {
+            if (!shape[y][x]) continue;
+            const bx = px + x;
+            const by = py + y;
+            if (bx < 0 || bx >= COLS || by >= ROWS) return true;
+            if (by >= 0 && b[by][bx]) return true;
+          }
+        }
+        return false;
+      }
+
+      function merge(b, piece) {
+        const { shape, x: px, y: py, type } = piece;
+        for (let y = 0; y < shape.length; y++) {
+          for (let x = 0; x < shape[y].length; x++) {
+            if (!shape[y][x]) continue;
+            const bx = px + x;
+            const by = py + y;
+            if (by >= 0 && by < ROWS && bx >= 0 && bx < COLS) {
+              b[by][bx] = type;
+            }
+          }
+        }
+      }
+
+      function clearLines() {
+        let cleared = 0;
+        for (let y = ROWS - 1; y >= 0; y--) {
+          if (board[y].every(c => c)) {
+            board.splice(y, 1);
+            board.unshift(Array(COLS).fill(null));
+            cleared++;
+            y++;
+          }
+        }
+        if (cleared > 0) {
+          lines += cleared;
+          score += [0, 100, 300, 500, 800][cleared] * level;
+          level = Math.floor(lines / 10) + 1;
+          dropInterval = Math.max(120, 1000 - (level - 1) * 80);
+          updateUI();
+        }
+      }
+
+      function drawCell(x, y, type) {
+        const color = COLORS[type] || '#777';
+        const px = x * BLOCK_SIZE;
+        const py = y * BLOCK_SIZE;
+
+        const grad = ctx.createLinearGradient(px, py, px + BLOCK_SIZE, py + BLOCK_SIZE);
+        grad.addColorStop(0, color);
+        grad.addColorStop(1, '#ffffff');
+
+        ctx.save();
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(px, py, BLOCK_SIZE, BLOCK_SIZE);
+        ctx.fillStyle = grad;
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+        ctx.lineWidth = 2;
+        const r = 6;
+        ctx.beginPath();
+        ctx.roundRect(px + 1, py + 1, BLOCK_SIZE - 2, BLOCK_SIZE - 2, r);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawBoard() {
+        ctx.clearRect(0, 0, boardCanvas.width, boardCanvas.height);
+        for (let y = 0; y < ROWS; y++) {
+          for (let x = 0; x < COLS; x++) {
+            const type = board[y][x];
+            if (type) drawCell(x, y, type);
+          }
+        }
+        const { shape, x: px, y: py, type } = current;
+        for (let y = 0; y < shape.length; y++) {
+          for (let x = 0; x < shape[y].length; x++) {
+            if (!shape[y][x]) continue;
+            const bx = px + x;
+            const by = py + y;
+            if (by >= 0) drawCell(bx, by, type);
+          }
+        }
+      }
+
+      function drawNext() {
+        nctx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
+        if (!nextPiece) return;
+        const shape = nextPiece.shape;
+        const size  = NEXT_SIZE;
+        const w = shape[0].length;
+        const h = shape.length;
+        const offsetX = Math.floor((nextCanvas.width  / size - w) / 2);
+        const offsetY = Math.floor((nextCanvas.height / size - h) / 2);
+
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            if (!shape[y][x]) continue;
+            const px = (offsetX + x) * size;
+            const py = (offsetY + y) * size;
+            const color = COLORS[nextPiece.type];
+
+            const grad = nctx.createLinearGradient(px, py, px + size, py + size);
+            grad.addColorStop(0, color);
+            grad.addColorStop(1, '#ffffff');
+            nctx.save();
+            nctx.fillStyle = grad;
+            nctx.strokeStyle = 'rgba(255,255,255,0.7)';
+            nctx.lineWidth = 1.5;
+            nctx.beginPath();
+            nctx.roundRect(px + 1, py + 1, size - 2, size - 2, 5);
+            nctx.fill();
+            nctx.stroke();
+            nctx.restore();
+          }
+        }
+      }
+
+      function updateUI() {
+        scoreEl.textContent = String(score);
+        levelEl.textContent = String(level);
+        linesEl.textContent = String(lines);
+      }
+
+      function spawnPiece() {
+        if (!nextPiece) {
+          nextPiece = createPiece(randomPieceType());
+        }
+        current   = nextPiece;
+        nextPiece = createPiece(randomPieceType());
+        if (collide(board, current)) {
+          gameOver = true;
+          cancelAnimationFrame(animationId);
+          alert('ゲームオーバー');
+        }
+        drawNext();
+      }
+
+      function hardDrop() {
+        while (!collide(board, { ...current, y: current.y + 1 })) {
+          current.y++;
+        }
+        lockPiece();
+      }
+
+      function lockPiece() {
+        merge(board, current);
+        clearLines();
+        spawnPiece();
+      }
+
+      function startGame() {
+        board = createEmptyBoard();
+        score = 0;
+        level = 1;
+        lines = 0;
+        dropInterval = 1000;
+        lastDropTime = performance.now();
+        paused = false;
+        gameOver = false;
+        nextPiece = null;
+        spawnPiece();
+        updateUI();
+        if (animationId) cancelAnimationFrame(animationId);
+        animationId = requestAnimationFrame(loop);
+      }
+
+      function togglePause() {
+        if (gameOver) return;
+        paused = !paused;
+        pauseBtn.textContent = paused ? '再開' : 'ポーズ';
+        if (!paused) {
+          lastDropTime = performance.now();
+          animationId = requestAnimationFrame(loop);
+        }
+      }
+
+      function loop(timestamp) {
+        if (paused || gameOver) return;
+        const delta = timestamp - lastDropTime;
+        if (delta >= dropInterval) {
+          lastDropTime = timestamp;
+          const moved = { ...current, y: current.y + 1 };
+          if (!collide(board, moved)) {
+            current.y++;
+          } else {
+            lockPiece();
+          }
+        }
+        drawBoard();
+        animationId = requestAnimationFrame(loop);
+      }
+
+      // キー操作
+      document.addEventListener('keydown', (e) => {
+        if (!current || paused || gameOver) return;
+        let moved;
+        switch (e.key) {
+          case 'ArrowLeft':
+            moved = { ...current, x: current.x - 1 };
+            if (!collide(board, moved)) current.x--;
+            break;
+          case 'ArrowRight':
+            moved = { ...current, x: current.x + 1 };
+            if (!collide(board, moved)) current.x++;
+            break;
+          case 'ArrowDown':
+            moved = { ...current, y: current.y + 1 };
+            if (!collide(board, moved)) {
+              current.y++;
+            } else {
+              lockPiece();
+            }
+            break;
+          case 'ArrowUp':
+          case 'x':
+          case 'X': {
+            const rotatedShape = rotate(current.shape);
+            moved = { ...current, shape: rotatedShape };
+            if (!collide(board, moved)) current.shape = rotatedShape;
+            break;
+          }
+          case ' ':
+            hardDrop();
+            break;
+        }
+        drawBoard();
+      });
+
+      // ボタンイベント
+      startBtn.addEventListener('click', startGame);
+      pauseBtn.addEventListener('click', togglePause);
+
+      // 初期状態
+      board = createEmptyBoard();
+      score = level = lines = 0;
+      drawBoard();
+      drawNext();
+      updateUI();
+    });
+  </script>
+</body>
+</html>
