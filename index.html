@@ -165,6 +165,28 @@
       box-shadow: 0 0 10px rgba(0, 188, 212, 0.4);
     }
 
+<<<<<<< HEAD
+=======
+    /* スキン切り替え UI */
+    .skin-switcher {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      opacity: 0.8;
+      margin-bottom: 6px;
+    }
+    .skin-switcher select {
+      background: rgba(8, 12, 30, 0.9);
+      border-radius: 999px;
+      border: 1px solid rgba(0, 255, 255, 0.5);
+      color: #fff;
+      padding: 2px 10px;
+      font-size: 11px;
+    }
+
+>>>>>>> ef9f8f9 (add main index page)
     /* ===== スマホレイアウト（1カラム縦並び） ===== */
     @media (max-width: 768px) {
       body {
@@ -253,7 +275,11 @@
     }
   </style>
 </head>
+<<<<<<< HEAD
 <body>
+=======
+<body class="skin-default">
+>>>>>>> ef9f8f9 (add main index page)
   <div class="app-shell">
     <div class="app-frame">
       <!-- PC用 左右デコ（スマホでは display:none） -->
@@ -270,6 +296,17 @@
 
           <!-- 情報パネル：スコア / レベル / ライン / ネクスト / ボタン -->
           <aside class="side-panel">
+<<<<<<< HEAD
+=======
+            <!-- スキン切り替え（土台のみ。見た目はほぼ共通） -->
+            <div class="skin-switcher">
+              <span>SKIN</span>
+              <select id="skinSelect">
+                <option value="default">Default</option>
+                <option value="cat">Cat</option>
+              </select>
+            </div>
+>>>>>>> ef9f8f9 (add main index page)
             <!-- スコア / レベル / ライン は PC では縦、スマホでは 3列グリッド -->
             <div class="stat-grid">
               <div class="panel-box">
@@ -318,6 +355,10 @@
       const linesEl     = document.getElementById('lines');
       const startBtn    = document.getElementById('startBtn');
       const pauseBtn    = document.getElementById('pauseBtn');
+<<<<<<< HEAD
+=======
+      const skinSelect  = document.getElementById('skinSelect');
+>>>>>>> ef9f8f9 (add main index page)
 
       if (!boardCanvas || !nextCanvas || !scoreEl || !levelEl || !linesEl || !startBtn || !pauseBtn) {
         console.error('必要な要素が見つかりません');
@@ -329,6 +370,18 @@
       const BLOCK_SIZE = 24;      // 内部解像度（CSSで拡大表示）
       const NEXT_SIZE  = 20;
 
+<<<<<<< HEAD
+=======
+      // スキン切り替え（今はクラスを切り替えるだけ。見た目の差分は後で実装）
+      if (skinSelect) {
+        skinSelect.addEventListener('change', () => {
+          const v = skinSelect.value === 'cat' ? 'skin-cat' : 'skin-default';
+          document.body.classList.remove('skin-default', 'skin-cat');
+          document.body.classList.add(v);
+        });
+      }
+
+>>>>>>> ef9f8f9 (add main index page)
       // キャンバス内部サイズ（表示サイズとは独立）
       boardCanvas.width  = COLS * BLOCK_SIZE;
       boardCanvas.height = ROWS * BLOCK_SIZE;
@@ -669,4 +722,8 @@
     });
   </script>
 </body>
+<<<<<<< HEAD
 </html>
+=======
+</html>
+>>>>>>> ef9f8f9 (add main index page)
