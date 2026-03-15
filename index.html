@@ -2,8 +2,8 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <!-- スマホ対応 viewport -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- スマホ対応 viewport（dvh 対応・ノッチ考慮） -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>テトリス</title>
 
   <style>
@@ -165,28 +165,46 @@
       box-shadow: 0 0 10px rgba(0, 188, 212, 0.4);
     }
 
-    /* ===== スマホレイアウト（1カラム縦並び） ===== */
+    /* ===== スマホレイアウト（1画面固定・上下スクロールなし） ===== */
     @media (max-width: 768px) {
+      html {
+        height: 100%;
+        overflow: hidden;
+      }
+
       body {
-        align-items: flex-start;
-        padding: 16px 0;
+        margin: 0;
+        min-height: 100%;
+        height: 100dvh;
+        max-height: 100dvh;
+        overflow: hidden;
+        align-items: stretch;
+        padding: 0;
       }
 
       .app-shell {
-        padding: 12px 8px 24px;
-      }
-
-      /* 装飾パネルは非表示（ゲーム盤面優先） */
-      .side-deco {
-        display: none;
+        padding: 4px 6px;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
       }
 
       .app-frame {
         display: block;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .side-deco {
+        display: none;
       }
 
       .game-card {
-        padding: 12px 10px 16px;
+        padding: 4px 6px;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
         border-radius: 0;
         box-shadow: none;
         background:
@@ -194,46 +212,65 @@
           rgba(5, 8, 24, 0.97);
       }
 
-      /* 1,2,5. スマホでは 1 カラム縦並び & 固定幅撤廃 */
       .game-container {
         flex-direction: column;
         align-items: center;
-        gap: 16px;
+        justify-content: flex-start;
+        gap: 4px;
         width: 100%;
         max-width: none;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
       }
 
-      /* 6. board-wrapper は width: min(92vw, 420px)、aspect-ratio: 1 / 2 */
+      /* 盤面：JS で --mobile-board-w / --mobile-board-h を設定。未設定時は 100dvh-180px で算出 */
       .board-wrapper {
-        width: min(92vw, 420px);
-        max-width: 420px;
-        padding: 6px;
+        flex: 0 0 auto;
+        width: min(92vw, var(--mobile-board-w, calc((100dvh - 180px) / 2)));
+        max-width: 92vw;
+        max-height: var(--mobile-board-h, min(calc(100dvh - 180px), 184vw));
+        height: auto;
+        aspect-ratio: 1 / 2;
+        padding: 2px;
+        align-self: center;
       }
 
-      /* 7. canvas#board は width:100%, height:100%（aspect-ratioに従う） */
       canvas#board {
         width: 100%;
         height: 100%;
         aspect-ratio: 1 / 2;
       }
 
-      /* 3,8. 盤面の下に：スコア/レベル/ライン → ネクスト → ボタン */
       .side-panel {
+        flex: 0 0 auto;
         width: 100%;
-        max-width: 420px;
+        max-width: min(92vw, 50dvh);
         flex-direction: column;
         align-items: stretch;
-        gap: 10px;
+        gap: 4px;
       }
 
       .panel-box {
         width: 100%;
+        padding: 4px 6px;
+        border-radius: 8px;
+      }
+
+      .panel-box h3 {
+        font-size: 10px;
+        margin-bottom: 2px;
+        letter-spacing: 0.5px;
+      }
+
+      .panel-box .value {
+        font-size: 18px;
       }
 
       .stat-grid {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 8px;
+        gap: 4px;
       }
 
       .stat-grid .panel-box {
@@ -243,12 +280,18 @@
       canvas#next {
         width: 100%;
         height: auto;
-        max-height: 220px;
+        max-height: 72px;
+        border-radius: 6px;
+      }
+
+      .button-group {
+        gap: 4px;
+        margin-top: 0;
       }
 
       .btn {
-        font-size: 14px;
-        padding-block: 10px;
+        font-size: 12px;
+        padding: 6px 10px;
       }
     }
   </style>
@@ -309,7 +352,6 @@
 
   <!-- ゲームロジック JavaScript -->
   <script>
-    // DOM構築完了後に初期化
     window.addEventListener('DOMContentLoaded', () => {
       const boardCanvas = document.getElementById('board');
       const nextCanvas  = document.getElementById('next');
@@ -666,6 +708,23 @@
       drawBoard();
       drawNext();
       updateUI();
+
+      // スマホ時：1画面に収めるため盤面の最大サイズを動的設定
+      function setMobileBoardHeight() {
+        if (window.innerWidth > 768) return;
+        const vh = window.innerHeight;
+        const sidePanel = document.querySelector('.side-panel');
+        const bottomH = Math.max(140, sidePanel ? sidePanel.offsetHeight : 180);
+        const gap = 8;
+        const padding = 16;
+        const maxBoardH = Math.max(80, vh - bottomH - gap - padding);
+        const maxBoardW = Math.min(window.innerWidth * 0.92, maxBoardH / 2);
+        document.documentElement.style.setProperty('--mobile-board-h', maxBoardH + 'px');
+        document.documentElement.style.setProperty('--mobile-board-w', maxBoardW + 'px');
+      }
+      setMobileBoardHeight();
+      window.addEventListener('resize', setMobileBoardHeight);
+      setTimeout(setMobileBoardHeight, 150);
     });
   </script>
 </body>
