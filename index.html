@@ -224,15 +224,14 @@
         overflow: hidden;
       }
 
-      /* 盤面：主役。高さは JS で canvas#board に合わせて動的決定（上部は NEXT 用の空き領域） */
+      /* 盤面：主役。高さは JS で canvas#board に合わせて動的決定（背景レイヤーは1層のみ） */
       .board-wrapper {
         position: relative;
         flex: 0 0 auto;
-        padding: 8px;
-        padding-top: 8px;
+        padding: 4px;
         display: flex;
         justify-content: center;
-        align-items: flex-end;
+        align-items: center;
         align-self: center;
         border-radius: 12px;
         box-shadow: 0 0 16px rgba(0, 255, 255, 0.2);
@@ -808,23 +807,12 @@
 
         // 幅方向はほぼ全幅を使う
         const maxWidth = vw * 0.98;
-        const reservedTop = 64; // NEXT ウィジェット＋余白（やや圧縮）
 
-        // 下部パネルの見かけ高さ（open / closed で変える）
-        let bottomH = vh * 0.25;
-        if (sidePanelEl) {
-          const isOpen = sidePanelEl.classList.contains('is-open');
-          if (isOpen) {
-            const full = sidePanelEl.scrollHeight || sidePanelEl.offsetHeight || 0;
-            bottomH = Math.min(full, vh * 0.35);
-          } else {
-            // 折りたたみ時はハンドル＋ラベル分だけ
-            bottomH = 32;
-          }
-        }
-
+        // 下部パネル分として常に一定の高さだけ確保（open / closed で盤面サイズは変えない）
+        const fixedBottomH = Math.max(56, vh * 0.18);
+        const reservedTop = 56; // NEXT ウィジェット＋余白の目安
         const verticalMargin = 12;
-        const availableHeight = Math.max(120, vh - reservedTop - bottomH - verticalMargin);
+        const availableHeight = Math.max(120, vh - reservedTop - fixedBottomH - verticalMargin);
 
         const scale = Math.min(maxWidth / baseW, availableHeight / baseH, 2.2);
         const displayW = Math.floor(baseW * scale);
@@ -835,18 +823,15 @@
 
         if (wrapper) {
           wrapper.style.width  = displayW + 'px';
-          wrapper.style.height = (displayH + reservedTop) + 'px';
+          wrapper.style.height = displayH + 'px';
         }
       }
 
-      // モバイル下部パネル開閉
+      // モバイル下部パネル開閉（盤面サイズには影響させない）
       if (mobilePanelToggle && sidePanelEl) {
-        // 初期状態は閉じた状態
         sidePanelEl.classList.remove('is-open');
-        layoutMobileBoard();
         mobilePanelToggle.addEventListener('click', () => {
           sidePanelEl.classList.toggle('is-open');
-          layoutMobileBoard();
         });
       }
 
