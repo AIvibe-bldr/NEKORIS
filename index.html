@@ -165,7 +165,7 @@
       box-shadow: 0 0 10px rgba(0, 188, 212, 0.4);
     }
 
-    /* ===== スマホレイアウト（盤面主役・縦長・1画面完結） ===== */
+    /* ===== スマホレイアウト（盤面主役・縦長・1画面完結 + 下部パネル） ===== */
     @media (max-width: 768px) {
       html {
         height: 100%;
@@ -226,6 +226,7 @@
 
       /* 盤面：主役。高さ 52〜56dvh に抑え、幅は画面に合わせ（aspect-ratio 1:2）。JS で --mobile-board-w/h を設定 */
       .board-wrapper {
+        position: relative;
         flex: 0 0 auto;
         width: min(92vw, var(--mobile-board-w, 28dvh));
         height: var(--mobile-board-h, auto);
@@ -245,13 +246,82 @@
         box-shadow: 0 0 10px rgba(0, 255, 255, 0.25);
       }
 
+      /* NEXT：盤面右上に重ねる小型フローティングパネル */
+      .board-wrapper .next-panel {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        padding: 2px 4px 4px;
+        border-radius: 8px;
+        background: rgba(4, 10, 32, 0.9);
+        box-shadow: 0 0 8px rgba(0, 0, 0, 0.6);
+      }
+
+      .board-wrapper .next-panel h3 {
+        font-size: 9px;
+        margin-bottom: 0;
+        line-height: 1.1;
+      }
+
+      .board-wrapper .next-panel canvas#next {
+        display: block;
+        margin: 2px auto 0;
+        width: 64px;
+        height: 64px;
+        max-width: 64px;
+        max-height: 64px;
+        border-radius: 4px;
+        box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+      }
+
+      /* 下部操作パネル（score / level / lines / buttons） */
       .side-panel {
-        flex: 0 0 auto;
+        position: fixed;
+        left: 50%;
+        transform: translateX(-50%) translateY(calc(100% - 32px));
+        bottom: 0;
         width: 100%;
-        max-width: min(92vw, 28dvh);
+        max-width: 520px;
         flex-direction: column;
         align-items: stretch;
         gap: 6px;
+        padding: 4px 8px 8px;
+        background: linear-gradient(to top, rgba(2, 4, 18, 0.95), rgba(5, 10, 32, 0.9));
+        border-radius: 16px 16px 0 0;
+        box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.9);
+        transition: transform 0.25s ease-out;
+        z-index: 10;
+      }
+
+      .side-panel.is-open {
+        transform: translateX(-50%) translateY(0);
+      }
+
+      /* 閉じた状態では細いバーのみ表示（中身は非表示） */
+      .side-panel-collapsed-label {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 4px 0;
+        cursor: pointer;
+      }
+
+      .side-panel-handle {
+        width: 36px;
+        height: 4px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.35);
+      }
+
+      .side-panel-label-text {
+        font-size: 10px;
+        opacity: 0.8;
+      }
+
+      .side-panel:not(.is-open) .stat-grid,
+      .side-panel:not(.is-open) .button-group {
+        display: none;
       }
 
       /* 情報パネル：3列コンパクトカード */
@@ -284,27 +354,6 @@
       .stat-grid .panel-box {
         width: 100%;
         min-height: 0;
-      }
-
-      /* NEXT：盤面よりかなり小さく（72〜96px 程度） */
-      .side-panel .next-panel {
-        padding: 2px 6px 4px;
-      }
-
-      .side-panel .next-panel h3 {
-        font-size: 9px;
-        margin-bottom: 0;
-      }
-
-      canvas#next {
-        display: block;
-        margin: 0 auto;
-        width: 80px;
-        height: 80px;
-        max-width: 80px;
-        max-height: 80px;
-        border-radius: 6px;
-        box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
       }
 
       /* ボタン：コンパクト・横並びで縦幅削減 */
@@ -341,10 +390,21 @@
           <section class="board-wrapper">
             <!-- JS側で width/height を設定していても OK。CSS でリサイズ。 -->
             <canvas id="board"></canvas>
+
+            <!-- ネクスト：モバイルでは盤面右上にフローティング表示 -->
+            <div class="panel-box next-panel">
+              <h3>ネクスト</h3>
+              <canvas id="next" width="160" height="160"></canvas>
+            </div>
           </section>
 
-          <!-- 情報パネル：スコア / レベル / ライン / ネクスト / ボタン -->
+          <!-- 情報パネル：スコア / レベル / ライン / ボタン（モバイルでは下部パネル） -->
           <aside class="side-panel">
+            <button type="button" class="side-panel-collapsed-label" id="mobilePanelToggle">
+              <span class="side-panel-handle"></span>
+              <span class="side-panel-label-text">ステータス / 操作</span>
+            </button>
+
             <!-- スコア / レベル / ライン は PC では縦、スマホでは 3列グリッド -->
             <div class="stat-grid">
               <div class="panel-box">
@@ -359,12 +419,6 @@
                 <h3>ライン</h3>
                 <div class="value" id="lines">0</div>
               </div>
-            </div>
-
-            <!-- ネクスト（モバイルでコンパクト表示） -->
-            <div class="panel-box next-panel">
-              <h3>ネクスト</h3>
-              <canvas id="next" width="160" height="160"></canvas>
             </div>
 
             <!-- 操作ボタン -->
@@ -392,6 +446,8 @@
       const linesEl     = document.getElementById('lines');
       const startBtn    = document.getElementById('startBtn');
       const pauseBtn    = document.getElementById('pauseBtn');
+      const mobilePanelToggle = document.getElementById('mobilePanelToggle');
+      const sidePanelEl = document.querySelector('.side-panel');
 
       if (!boardCanvas || !nextCanvas || !scoreEl || !levelEl || !linesEl || !startBtn || !pauseBtn) {
         console.error('必要な要素が見つかりません');
@@ -733,6 +789,15 @@
       // ボタンイベント
       startBtn.addEventListener('click', startGame);
       pauseBtn.addEventListener('click', togglePause);
+
+      // モバイル下部パネル開閉
+      if (mobilePanelToggle && sidePanelEl) {
+        // 初期状態は閉じた状態
+        sidePanelEl.classList.remove('is-open');
+        mobilePanelToggle.addEventListener('click', () => {
+          sidePanelEl.classList.toggle('is-open');
+        });
+      }
 
       // 初期状態
       board = createEmptyBoard();
