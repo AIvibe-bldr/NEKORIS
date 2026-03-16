@@ -793,8 +793,8 @@
       // スマホ時：canvas#board の見た目サイズを、内部解像度に対して等倍スケールで拡大
       function layoutMobileBoard() {
         const isMobile = window.innerWidth <= 768;
-        const baseW = boardCanvas.width;
-        const baseH = boardCanvas.height;
+        const baseW = boardCanvas.width;   // 240
+        const baseH = boardCanvas.height;  // 480
         if (!isMobile) {
           boardCanvas.style.width  = '';
           boardCanvas.style.height = '';
@@ -806,15 +806,39 @@
         const wrapper = document.querySelector('.board-wrapper');
 
         // 幅方向はほぼ全幅を使う
-        const maxWidth = vw * 0.98;
+        const availableWidth = vw * 0.98;
 
-        // 下部パネル分として常に一定の高さだけ確保（open / closed で盤面サイズは変えない）
-        const fixedBottomH = Math.max(56, vh * 0.18);
-        const reservedTop = 56; // NEXT ウィジェット＋余白の目安
+        // ステータス/操作バーの高さ（collapsed / expanded で変える）
+        let barHeightCollapsed = 40;                   // ハンドル＋ラベル分
+        let barHeightExpandedMaxRatio = 0.38;          // 展開時は画面高の最大 38% まで
+        let barHeight;
+
+        if (sidePanelEl) {
+          const isOpen = sidePanelEl.classList.contains('is-open');
+          if (isOpen) {
+            const full = sidePanelEl.scrollHeight || sidePanelEl.offsetHeight || 0;
+            barHeight = Math.min(full, vh * barHeightExpandedMaxRatio);
+          } else {
+            barHeight = barHeightCollapsed;
+          }
+        } else {
+          barHeight = vh * 0.2;
+        }
+
+        const reservedTop = 56; // NEXT ウィジェット＋上部余白
         const verticalMargin = 12;
-        const availableHeight = Math.max(120, vh - reservedTop - fixedBottomH - verticalMargin);
+        const availableHeight = Math.max(
+          120,
+          vh - reservedTop - barHeight - verticalMargin
+        );
 
-        const scale = Math.min(maxWidth / baseW, availableHeight / baseH, 2.2);
+        // 縦横比を保ったまま最大化するための等倍スケール
+        const scale = Math.min(
+          availableWidth / baseW,
+          availableHeight / baseH,
+          2.5
+        );
+
         const displayW = Math.floor(baseW * scale);
         const displayH = Math.floor(baseH * scale);
 
@@ -827,11 +851,12 @@
         }
       }
 
-      // モバイル下部パネル開閉（盤面サイズには影響させない）
+      // モバイル下部パネル開閉（open / closed でバー高さだけ変え、board は等倍で再計算）
       if (mobilePanelToggle && sidePanelEl) {
         sidePanelEl.classList.remove('is-open');
         mobilePanelToggle.addEventListener('click', () => {
           sidePanelEl.classList.toggle('is-open');
+          layoutMobileBoard();
         });
       }
 
