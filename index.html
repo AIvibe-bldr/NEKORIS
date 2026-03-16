@@ -213,6 +213,7 @@
       }
 
       .game-container {
+        position: relative; /* next-widget の基準コンテナ */
         flex-direction: column;
         align-items: center;
         justify-content: flex-start;
@@ -244,11 +245,13 @@
         box-shadow: 0 0 10px rgba(0, 255, 255, 0.25);
       }
 
-      /* NEXT：盤面右上に重ねる小型フローティングウィジェット（横長背景は使わない） */
-      .board-wrapper .next-widget {
+      /* NEXT：盤面右外側の余白帯に配置する小型ウィジェット（HUD 的表示） */
+      .next-widget {
         position: absolute;
-        top: 8px;
-        right: 8px;
+        /* 盤面上端付近＋少し上方向に寄せる */
+        top: 12px;
+        /* 画面右端より少し内側（余白帯の中央寄り） */
+        right: 12px;
         padding: 2px 4px 4px;
         border-radius: 8px;
         background: rgba(4, 10, 32, 0.9);
@@ -258,13 +261,13 @@
         align-items: center;
       }
 
-      .board-wrapper .next-widget h3 {
+      .next-widget h3 {
         font-size: 9px;
         margin-bottom: 1px;
         line-height: 1.1;
       }
 
-      .board-wrapper .next-widget canvas#next {
+      .next-widget canvas#next {
         display: block;
         width: 56px;
         height: 56px;
@@ -390,13 +393,13 @@
           <section class="board-wrapper">
             <!-- JS側で width/height を設定していても OK。CSS でリサイズ。 -->
             <canvas id="board"></canvas>
-
-            <!-- ネクスト：モバイルでは盤面右上に小型ウィジェットとしてフローティング表示 -->
-            <div class="next-widget">
-              <h3>ネクスト</h3>
-              <canvas id="next" width="160" height="160"></canvas>
-            </div>
           </section>
+
+          <!-- ネクスト：モバイルでは盤面右外側の余白帯に HUD 的に表示 -->
+          <div class="next-widget">
+            <h3>ネクスト</h3>
+            <canvas id="next" width="160" height="160"></canvas>
+          </div>
 
           <!-- 情報パネル：スコア / レベル / ライン / ボタン（モバイルでは下部パネル） -->
           <aside class="side-panel">
