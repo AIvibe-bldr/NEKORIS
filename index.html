@@ -224,23 +224,26 @@
         overflow: hidden;
       }
 
-      /* 盤面：主役。高さ 52〜56dvh に抑え、幅は画面に合わせ（aspect-ratio 1:2）。JS で --mobile-board-w/h を設定 */
+      /* 盤面：主役。高さ 52〜60dvh 程度を使い、上部に NEXT 用の空き領域を確保（JS で --mobile-board-w/h を設定） */
       .board-wrapper {
         position: relative;
         flex: 0 0 auto;
         width: min(92vw, var(--mobile-board-w, 28dvh));
-        height: var(--mobile-board-h, auto);
-        max-height: 56dvh;
-        aspect-ratio: 1 / 2;
+        height: calc(var(--mobile-board-h, 56dvh) * 1.18);
+        max-height: 68dvh;
         padding: 4px;
+        display: flex;
+        justify-content: center;
+        align-items: flex-end;
         align-self: center;
         border-radius: 12px;
         box-shadow: 0 0 16px rgba(0, 255, 255, 0.2);
       }
 
       .board-wrapper canvas#board {
-        width: 100%;
-        height: 100%;
+        width: auto;
+        max-width: 100%;
+        height: var(--mobile-board-h, 56dvh);
         aspect-ratio: 1 / 2;
         border-radius: 8px;
         box-shadow: 0 0 10px rgba(0, 255, 255, 0.25);
@@ -251,7 +254,7 @@
         position: absolute;
         top: 6px;
         right: 6px;
-        padding: 2px 4px 4px;
+        padding: 1px 4px 3px;
         border-radius: 8px;
         background: rgba(4, 10, 32, 0.9);
         box-shadow: 0 0 8px rgba(0, 0, 0, 0.6);
@@ -265,11 +268,11 @@
 
       .board-wrapper .next-panel canvas#next {
         display: block;
-        margin: 2px auto 0;
-        width: 64px;
-        height: 64px;
-        max-width: 64px;
-        max-height: 64px;
+        margin: 1px auto 0;
+        width: 52px;
+        height: 52px;
+        max-width: 52px;
+        max-height: 52px;
         border-radius: 4px;
         box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
       }
@@ -807,7 +810,7 @@
       updateUI();
 
       // スマホ時：1画面に収めるため盤面の最大サイズを動的設定
-      // モバイル時：盤面を 52〜56dvh に抑え、aspect-ratio 1:2 を維持して1画面に収める
+      // モバイル時：盤面を 52〜60dvh 程度まで拡大しつつ、aspect-ratio 1:2 を維持して1画面に収める
       function setMobileBoardHeight() {
         if (window.innerWidth > 768) return;
         const vh = window.innerHeight;
@@ -816,7 +819,7 @@
         const bottomH = Math.max(120, sidePanel ? sidePanel.offsetHeight : 160);
         const gap = 12;
         const padding = 20;
-        const capDvh = 0.56;
+        const capDvh = 0.62;
         const maxBoardH = Math.min(vh * capDvh, Math.max(100, vh - bottomH - gap - padding));
         const maxBoardW = Math.min(vw * 0.92, maxBoardH / 2);
         document.documentElement.style.setProperty('--mobile-board-w', maxBoardW + 'px');
