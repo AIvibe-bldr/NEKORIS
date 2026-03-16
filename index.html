@@ -165,7 +165,7 @@
       box-shadow: 0 0 10px rgba(0, 188, 212, 0.4);
     }
 
-    /* ===== スマホレイアウト（1画面固定・上下スクロールなし） ===== */
+    /* ===== スマホレイアウト（盤面主役・縦長・1画面完結） ===== */
     @media (max-width: 768px) {
       html {
         height: 100%;
@@ -183,7 +183,7 @@
       }
 
       .app-shell {
-        padding: 4px 6px;
+        padding: 6px 8px;
         height: 100%;
         min-height: 0;
         overflow: hidden;
@@ -201,14 +201,14 @@
       }
 
       .game-card {
-        padding: 4px 6px;
+        padding: 6px 8px;
         height: 100%;
         min-height: 0;
         overflow: hidden;
-        border-radius: 0;
-        box-shadow: none;
+        border-radius: 12px;
+        box-shadow: 0 0 12px rgba(0, 255, 255, 0.15);
         background:
-          radial-gradient(circle at top, rgba(0,255,255,0.2), transparent 55%),
+          radial-gradient(circle at top, rgba(0,255,255,0.12), transparent 55%),
           rgba(5, 8, 24, 0.97);
       }
 
@@ -216,7 +216,7 @@
         flex-direction: column;
         align-items: center;
         justify-content: flex-start;
-        gap: 4px;
+        gap: 6px;
         width: 100%;
         max-width: none;
         height: 100%;
@@ -224,47 +224,55 @@
         overflow: hidden;
       }
 
-      /* 盤面：JS で --mobile-board-w / --mobile-board-h を設定。未設定時は 100dvh-180px で算出 */
+      /* 盤面：主役。高さ 52〜56dvh に抑え、幅は画面に合わせ（aspect-ratio 1:2）。JS で --mobile-board-w/h を設定 */
       .board-wrapper {
         flex: 0 0 auto;
-        width: min(92vw, var(--mobile-board-w, calc((100dvh - 180px) / 2)));
-        max-width: 92vw;
-        max-height: var(--mobile-board-h, min(calc(100dvh - 180px), 184vw));
-        height: auto;
+        width: min(92vw, var(--mobile-board-w, 28dvh));
+        height: var(--mobile-board-h, auto);
+        max-height: 56dvh;
         aspect-ratio: 1 / 2;
-        padding: 2px;
+        padding: 4px;
         align-self: center;
+        border-radius: 12px;
+        box-shadow: 0 0 16px rgba(0, 255, 255, 0.2);
       }
 
-      canvas#board {
+      .board-wrapper canvas#board {
         width: 100%;
         height: 100%;
         aspect-ratio: 1 / 2;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0, 255, 255, 0.25);
       }
 
       .side-panel {
         flex: 0 0 auto;
         width: 100%;
-        max-width: min(92vw, 50dvh);
+        max-width: min(92vw, 28dvh);
         flex-direction: column;
         align-items: stretch;
-        gap: 4px;
+        gap: 6px;
       }
 
+      /* 情報パネル：3列コンパクトカード */
       .panel-box {
         width: 100%;
         padding: 4px 6px;
         border-radius: 8px;
+        box-shadow: 0 0 8px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 255, 255, 0.08);
       }
 
       .panel-box h3 {
-        font-size: 10px;
-        margin-bottom: 2px;
-        letter-spacing: 0.5px;
+        font-size: 9px;
+        margin-bottom: 1px;
+        letter-spacing: 0.3px;
+        line-height: 1.2;
       }
 
       .panel-box .value {
-        font-size: 18px;
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 1.2;
       }
 
       .stat-grid {
@@ -275,23 +283,47 @@
 
       .stat-grid .panel-box {
         width: 100%;
+        min-height: 0;
+      }
+
+      /* NEXT：盤面よりかなり小さく（72〜96px 程度） */
+      .side-panel .next-panel {
+        padding: 2px 6px 4px;
+      }
+
+      .side-panel .next-panel h3 {
+        font-size: 9px;
+        margin-bottom: 0;
       }
 
       canvas#next {
-        width: 100%;
-        height: auto;
-        max-height: 72px;
+        display: block;
+        margin: 0 auto;
+        width: 80px;
+        height: 80px;
+        max-width: 80px;
+        max-height: 80px;
         border-radius: 6px;
+        box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
       }
 
+      /* ボタン：コンパクト・横並びで縦幅削減 */
       .button-group {
-        gap: 4px;
+        flex-direction: row;
+        justify-content: center;
+        gap: 8px;
         margin-top: 0;
+      }
+
+      .button-group .btn {
+        flex: 1;
+        min-width: 0;
       }
 
       .btn {
         font-size: 12px;
-        padding: 6px 10px;
+        padding: 8px 10px;
+        border-radius: 8px;
       }
     }
   </style>
@@ -329,8 +361,8 @@
               </div>
             </div>
 
-            <!-- ネクスト -->
-            <div class="panel-box">
+            <!-- ネクスト（モバイルでコンパクト表示） -->
+            <div class="panel-box next-panel">
               <h3>ネクスト</h3>
               <canvas id="next" width="160" height="160"></canvas>
             </div>
@@ -710,17 +742,20 @@
       updateUI();
 
       // スマホ時：1画面に収めるため盤面の最大サイズを動的設定
+      // モバイル時：盤面を 52〜56dvh に抑え、aspect-ratio 1:2 を維持して1画面に収める
       function setMobileBoardHeight() {
         if (window.innerWidth > 768) return;
         const vh = window.innerHeight;
+        const vw = window.innerWidth;
         const sidePanel = document.querySelector('.side-panel');
-        const bottomH = Math.max(140, sidePanel ? sidePanel.offsetHeight : 180);
-        const gap = 8;
-        const padding = 16;
-        const maxBoardH = Math.max(80, vh - bottomH - gap - padding);
-        const maxBoardW = Math.min(window.innerWidth * 0.92, maxBoardH / 2);
-        document.documentElement.style.setProperty('--mobile-board-h', maxBoardH + 'px');
+        const bottomH = Math.max(120, sidePanel ? sidePanel.offsetHeight : 160);
+        const gap = 12;
+        const padding = 20;
+        const capDvh = 0.56;
+        const maxBoardH = Math.min(vh * capDvh, Math.max(100, vh - bottomH - gap - padding));
+        const maxBoardW = Math.min(vw * 0.92, maxBoardH / 2);
         document.documentElement.style.setProperty('--mobile-board-w', maxBoardW + 'px');
+        document.documentElement.style.setProperty('--mobile-board-h', (maxBoardW * 2) + 'px');
       }
       setMobileBoardHeight();
       window.addEventListener('resize', setMobileBoardHeight);
