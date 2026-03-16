@@ -241,37 +241,38 @@
       }
 
       .board-wrapper canvas#board {
-        width: 100%;
-        height: 100%;
-        aspect-ratio: 1 / 2;
+        display: block;
+        margin: 0 auto;
         border-radius: 8px;
         box-shadow: 0 0 10px rgba(0, 255, 255, 0.25);
       }
 
-      /* NEXT：盤面右上に重ねる小型フローティングパネル */
-      .board-wrapper .next-panel {
+      /* NEXT：盤面右上に重ねる小型フローティングウィジェット（横長背景は使わない） */
+      .board-wrapper .next-widget {
         position: absolute;
-        top: 6px;
-        right: 6px;
-        padding: 1px 4px 3px;
+        top: 8px;
+        right: 8px;
+        padding: 2px 4px 4px;
         border-radius: 8px;
         background: rgba(4, 10, 32, 0.9);
         box-shadow: 0 0 8px rgba(0, 0, 0, 0.6);
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
       }
 
-      .board-wrapper .next-panel h3 {
+      .board-wrapper .next-widget h3 {
         font-size: 9px;
-        margin-bottom: 0;
+        margin-bottom: 1px;
         line-height: 1.1;
       }
 
-      .board-wrapper .next-panel canvas#next {
+      .board-wrapper .next-widget canvas#next {
         display: block;
-        margin: 1px auto 0;
-        width: 52px;
-        height: 52px;
-        max-width: 52px;
-        max-height: 52px;
+        width: 56px;
+        height: 56px;
+        max-width: 56px;
+        max-height: 56px;
         border-radius: 4px;
         box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
       }
@@ -393,8 +394,8 @@
             <!-- JS側で width/height を設定していても OK。CSS でリサイズ。 -->
             <canvas id="board"></canvas>
 
-            <!-- ネクスト：モバイルでは盤面右上にフローティング表示 -->
-            <div class="panel-box next-panel">
+            <!-- ネクスト：モバイルでは盤面右上に小型ウィジェットとしてフローティング表示 -->
+            <div class="next-widget">
               <h3>ネクスト</h3>
               <canvas id="next" width="160" height="160"></canvas>
             </div>
@@ -808,25 +809,43 @@
       drawNext();
       updateUI();
 
-      // スマホ時：1画面に収めるため盤面の最大サイズを動的設定
-      // モバイル時：盤面を 52〜60dvh 程度まで拡大しつつ、aspect-ratio 1:2 を維持して1画面に収める
-      function setMobileBoardHeight() {
-        if (window.innerWidth > 768) return;
-        const vh = window.innerHeight;
+      // スマホ時：canvas#board の見た目サイズを、内部解像度に対して等倍スケールで拡大
+      function layoutMobileBoard() {
+        const isMobile = window.innerWidth <= 768;
+        const baseW = boardCanvas.width;
+        const baseH = boardCanvas.height;
+        if (!isMobile) {
+          boardCanvas.style.width  = '';
+          boardCanvas.style.height = '';
+          return;
+        }
+
         const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const wrapper = document.querySelector('.board-wrapper');
         const sidePanel = document.querySelector('.side-panel');
-        const bottomH = Math.max(120, sidePanel ? sidePanel.offsetHeight : 160);
-        const gap = 12;
-        const padding = 20;
-        const capDvh = 0.62;
-        const maxBoardH = Math.min(vh * capDvh, Math.max(100, vh - bottomH - gap - padding));
-        const maxBoardW = Math.min(vw * 0.92, maxBoardH / 2);
-        document.documentElement.style.setProperty('--mobile-board-w', maxBoardW + 'px');
-        document.documentElement.style.setProperty('--mobile-board-h', (maxBoardW * 2) + 'px');
+
+        const maxWidth = Math.min(vw * 0.96, 420);
+        const reservedTop = 80; // NEXT ウィジェット＋余白
+        const bottomH = sidePanel ? Math.min(sidePanel.offsetHeight || 0, vh * 0.35) : vh * 0.25;
+        const verticalMargin = 16;
+        const availableHeight = Math.max(120, vh - reservedTop - bottomH - verticalMargin);
+
+        const scale = Math.min(maxWidth / baseW, availableHeight / baseH, 2.2);
+        const displayW = Math.floor(baseW * scale);
+        const displayH = Math.floor(baseH * scale);
+
+        boardCanvas.style.width  = displayW + 'px';
+        boardCanvas.style.height = displayH + 'px';
+
+        if (wrapper) {
+          wrapper.style.width  = displayW + 'px';
+          wrapper.style.height = (displayH + reservedTop) + 'px';
+        }
       }
-      setMobileBoardHeight();
-      window.addEventListener('resize', setMobileBoardHeight);
-      setTimeout(setMobileBoardHeight, 150);
+      layoutMobileBoard();
+      window.addEventListener('resize', layoutMobileBoard);
+      setTimeout(layoutMobileBoard, 150);
     });
   </script>
 </body>
