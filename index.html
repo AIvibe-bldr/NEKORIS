@@ -224,14 +224,12 @@
         overflow: hidden;
       }
 
-      /* 盤面：主役。高さ 65〜70dvh 程度を使い、上部に NEXT 用の空き領域を確保（canvas 自体をしっかり拡大） */
+      /* 盤面：主役。高さは JS で canvas#board に合わせて動的決定（上部は NEXT 用の空き領域） */
       .board-wrapper {
         position: relative;
         flex: 0 0 auto;
-        width: min(96vw, 420px);
-        height: min(70dvh, 192vw);
         padding: 8px;
-        padding-top: 56px; /* 上部 56px を NEXT 用の専用スペースにする */
+        padding-top: 8px;
         display: flex;
         justify-content: center;
         align-items: flex-end;
@@ -793,22 +791,6 @@
       startBtn.addEventListener('click', startGame);
       pauseBtn.addEventListener('click', togglePause);
 
-      // モバイル下部パネル開閉
-      if (mobilePanelToggle && sidePanelEl) {
-        // 初期状態は閉じた状態
-        sidePanelEl.classList.remove('is-open');
-        mobilePanelToggle.addEventListener('click', () => {
-          sidePanelEl.classList.toggle('is-open');
-        });
-      }
-
-      // 初期状態
-      board = createEmptyBoard();
-      score = level = lines = 0;
-      drawBoard();
-      drawNext();
-      updateUI();
-
       // スマホ時：canvas#board の見た目サイズを、内部解像度に対して等倍スケールで拡大
       function layoutMobileBoard() {
         const isMobile = window.innerWidth <= 768;
@@ -823,12 +805,24 @@
         const vw = window.innerWidth;
         const vh = window.innerHeight;
         const wrapper = document.querySelector('.board-wrapper');
-        const sidePanel = document.querySelector('.side-panel');
 
         const maxWidth = Math.min(vw * 0.96, 420);
         const reservedTop = 80; // NEXT ウィジェット＋余白
-        const bottomH = sidePanel ? Math.min(sidePanel.offsetHeight || 0, vh * 0.35) : vh * 0.25;
-        const verticalMargin = 16;
+
+        // 下部パネルの見かけ高さ（open / closed で変える）
+        let bottomH = vh * 0.25;
+        if (sidePanelEl) {
+          const isOpen = sidePanelEl.classList.contains('is-open');
+          if (isOpen) {
+            const full = sidePanelEl.scrollHeight || sidePanelEl.offsetHeight || 0;
+            bottomH = Math.min(full, vh * 0.4);
+          } else {
+            // 折りたたみ時はハンドル＋ラベル分だけ
+            bottomH = 40;
+          }
+        }
+
+        const verticalMargin = 12;
         const availableHeight = Math.max(120, vh - reservedTop - bottomH - verticalMargin);
 
         const scale = Math.min(maxWidth / baseW, availableHeight / baseH, 2.2);
@@ -843,6 +837,25 @@
           wrapper.style.height = (displayH + reservedTop) + 'px';
         }
       }
+
+      // モバイル下部パネル開閉
+      if (mobilePanelToggle && sidePanelEl) {
+        // 初期状態は閉じた状態
+        sidePanelEl.classList.remove('is-open');
+        layoutMobileBoard();
+        mobilePanelToggle.addEventListener('click', () => {
+          sidePanelEl.classList.toggle('is-open');
+          layoutMobileBoard();
+        });
+      }
+
+      // 初期状態
+      board = createEmptyBoard();
+      score = level = lines = 0;
+      drawBoard();
+      drawNext();
+      updateUI();
+
       layoutMobileBoard();
       window.addEventListener('resize', layoutMobileBoard);
       setTimeout(layoutMobileBoard, 150);
