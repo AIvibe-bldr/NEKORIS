@@ -806,8 +806,9 @@
         const vh = window.innerHeight;
         const wrapper = document.querySelector('.board-wrapper');
 
-        const maxWidth = Math.min(vw * 0.96, 420);
-        const reservedTop = 80; // NEXT ウィジェット＋余白
+        // 幅方向はほぼ全幅を使う
+        const maxWidth = vw * 0.98;
+        const reservedTop = 64; // NEXT ウィジェット＋余白（やや圧縮）
 
         // 下部パネルの見かけ高さ（open / closed で変える）
         let bottomH = vh * 0.25;
@@ -815,10 +816,10 @@
           const isOpen = sidePanelEl.classList.contains('is-open');
           if (isOpen) {
             const full = sidePanelEl.scrollHeight || sidePanelEl.offsetHeight || 0;
-            bottomH = Math.min(full, vh * 0.4);
+            bottomH = Math.min(full, vh * 0.35);
           } else {
             // 折りたたみ時はハンドル＋ラベル分だけ
-            bottomH = 40;
+            bottomH = 32;
           }
         }
 
