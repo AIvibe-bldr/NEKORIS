@@ -395,13 +395,17 @@
             <canvas id="board"></canvas>
           </section>
 
-          <!-- ネクスト：モバイルでは盤面右外側の余白帯に HUD 的に表示 -->
+          <!-- ネクスト + 操作ボタン：モバイルでは盤面右外側の余白帯に HUD 的に表示 -->
           <div class="next-widget">
             <h3>ネクスト</h3>
             <canvas id="next" width="160" height="160"></canvas>
+            <div class="button-group">
+              <button type="button" class="btn" id="startBtn">スタート</button>
+              <button type="button" class="btn" id="pauseBtn">ポーズ</button>
+            </div>
           </div>
 
-          <!-- 情報パネル：スコア / レベル / ライン / ボタン（モバイルでは下部パネル） -->
+          <!-- 情報パネル：スコア / レベル / ライン（モバイルでは下部パネル） -->
           <aside class="side-panel">
             <button type="button" class="side-panel-collapsed-label" id="mobilePanelToggle">
               <span class="side-panel-handle"></span>
@@ -424,13 +428,6 @@
               </div>
             </div>
 
-            <!-- 操作ボタン -->
-            <div class="panel-box">
-              <div class="button-group">
-                <button type="button" class="btn" id="startBtn">スタート</button>
-                <button type="button" class="btn" id="pauseBtn">ポーズ</button>
-              </div>
-            </div>
           </aside>
         </div>
       </main>
@@ -794,6 +791,7 @@
       pauseBtn.addEventListener('click', togglePause);
 
       // スマホ時：canvas#board の見た目サイズを、内部解像度に対して等倍スケールで拡大
+      // ※ 下部パネル open / closed によって board のサイズは変えない（常に同じスケール）
       function layoutMobileBoard() {
         const isMobile = window.innerWidth <= 768;
         const baseW = boardCanvas.width;   // 240
@@ -811,28 +809,13 @@
         // 幅方向はほぼ全幅を使う
         const availableWidth = vw * 0.98;
 
-        // ステータス/操作バーの高さ（collapsed / expanded で変える）
-        let barHeightCollapsed = 40;                   // ハンドル＋ラベル分
-        let barHeightExpandedMaxRatio = 0.38;          // 展開時は画面高の最大 38% まで
-        let barHeight;
-
-        if (sidePanelEl) {
-          const isOpen = sidePanelEl.classList.contains('is-open');
-          if (isOpen) {
-            const full = sidePanelEl.scrollHeight || sidePanelEl.offsetHeight || 0;
-            barHeight = Math.min(full, vh * barHeightExpandedMaxRatio);
-          } else {
-            barHeight = barHeightCollapsed;
-          }
-        } else {
-          barHeight = vh * 0.2;
-        }
-
+        // ステータスバー分として常に一定の高さだけ確保（open / closed に依存させない）
+        const fixedBarHeight = Math.max(56, vh * 0.2);
         const reservedTop = 56; // NEXT ウィジェット＋上部余白
         const verticalMargin = 12;
         const availableHeight = Math.max(
           120,
-          vh - reservedTop - barHeight - verticalMargin
+          vh - reservedTop - fixedBarHeight - verticalMargin
         );
 
         // 縦横比を保ったまま最大化するための等倍スケール
@@ -854,12 +837,11 @@
         }
       }
 
-      // モバイル下部パネル開閉（open / closed でバー高さだけ変え、board は等倍で再計算）
+      // モバイル下部パネル開閉（board のサイズは変えない）
       if (mobilePanelToggle && sidePanelEl) {
         sidePanelEl.classList.remove('is-open');
         mobilePanelToggle.addEventListener('click', () => {
           sidePanelEl.classList.toggle('is-open');
-          layoutMobileBoard();
         });
       }
 
