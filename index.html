@@ -213,11 +213,12 @@
       }
 
       .game-container {
-        position: relative; /* next-widget の基準コンテナ */
-        flex-direction: column;
-        align-items: center;
-        justify-content: flex-start;
-        gap: 6px;
+        position: relative;
+        display: flex;
+        flex-direction: row;        /* 左: board / 右: HUD の2カラム */
+        align-items: flex-start;
+        justify-content: center;
+        gap: 8px;
         width: 100%;
         max-width: none;
         height: 100%;
@@ -225,38 +226,42 @@
         overflow: hidden;
       }
 
-      /* 盤面：主役。高さは JS で canvas#board に合わせて動的決定（背景レイヤーは1層のみ） */
+      /* 盤面：主役。左カラムに配置（横幅は JS で決まる） */
       .board-wrapper {
-        position: relative;
         flex: 0 0 auto;
         padding: 4px;
         display: flex;
-        justify-content: center;
+        justify-content: flex-start;
         align-items: center;
-        align-self: center;
         border-radius: 12px;
         box-shadow: 0 0 16px rgba(0, 255, 255, 0.2);
       }
 
       .board-wrapper canvas#board {
         display: block;
-        margin: 0 auto;
+        margin: 0;
         border-radius: 8px;
         box-shadow: 0 0 10px rgba(0, 255, 255, 0.25);
       }
 
-      /* NEXT：盤面右外側の余白帯に配置する小型ウィジェット（HUD 的表示） */
+      /* HUD カラム：右側の余白帯を専用領域として利用 */
+      .hud-column {
+        flex: 0 0 92px;            /* HUD の固定幅（board 計算時に控除する） */
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        justify-content: flex-start;
+        gap: 8px;
+        padding-top: 8px;
+      }
+
+      /* NEXT：HUD カラム上部に表示する小型ウィジェット */
       .next-widget {
-        position: absolute;
-        /* 盤面上端付近＋少し上方向に寄せる */
-        top: 12px;
-        /* 画面右端より少し内側（余白帯の中央寄り） */
-        right: 12px;
         padding: 2px 4px 4px;
         border-radius: 8px;
         background: rgba(4, 10, 32, 0.9);
         box-shadow: 0 0 8px rgba(0, 0, 0, 0.6);
-        display: inline-flex;
+        display: flex;
         flex-direction: column;
         align-items: center;
       }
@@ -359,10 +364,10 @@
         min-height: 0;
       }
 
-      /* ボタン：コンパクト・横並びで縦幅削減 */
+      /* ボタン：HUD 内では縦並び、他では必要に応じてレイアウト */
       .button-group {
-        flex-direction: row;
-        justify-content: center;
+        flex-direction: column;
+        justify-content: flex-start;
         gap: 8px;
         margin-top: 0;
       }
@@ -389,21 +394,26 @@
       <!-- 中央ゲームカード -->
       <main class="game-card">
         <div class="game-container">
-          <!-- 盤面：PCでは左、スマホでは最上段 -->
+          <!-- 左カラム：実プレイ盤面 -->
           <section class="board-wrapper">
             <!-- JS側で width/height を設定していても OK。CSS でリサイズ。 -->
             <canvas id="board"></canvas>
           </section>
 
-          <!-- ネクスト + 操作ボタン：モバイルでは盤面右外側の余白帯に HUD 的に表示 -->
-          <div class="next-widget">
-            <h3>ネクスト</h3>
-            <canvas id="next" width="160" height="160"></canvas>
+          <!-- 右カラム：HUD（ネクスト + スタート/ポーズ） -->
+          <aside class="hud-column">
+            <!-- ネクスト -->
+            <div class="next-widget">
+              <h3>ネクスト</h3>
+              <canvas id="next" width="160" height="160"></canvas>
+            </div>
+
+            <!-- 操作ボタン（縦並び） -->
             <div class="button-group">
               <button type="button" class="btn" id="startBtn">スタート</button>
               <button type="button" class="btn" id="pauseBtn">ポーズ</button>
             </div>
-          </div>
+          </aside>
 
           <!-- 情報パネル：スコア / レベル / ライン（モバイルでは下部パネル） -->
           <aside class="side-panel">
@@ -805,9 +815,12 @@
         const vw = window.innerWidth;
         const vh = window.innerHeight;
         const wrapper = document.querySelector('.board-wrapper');
+        const hudColumn = document.querySelector('.hud-column');
 
-        // 幅方向はほぼ全幅を使う
-        const availableWidth = vw * 0.98;
+        // HUD カラムの幅を引いた残りを盤面の利用可能幅とする
+        const hudWidth = hudColumn ? (hudColumn.offsetWidth || 92) : 92;
+        const horizontalGap = 8;
+        const availableWidth = Math.max(120, vw * 0.98 - hudWidth - horizontalGap);
 
         // ステータスバー分として常に一定の高さだけ確保（open / closed に依存させない）
         const fixedBarHeight = Math.max(56, vh * 0.2);
