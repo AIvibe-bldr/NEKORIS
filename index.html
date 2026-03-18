@@ -167,6 +167,38 @@
 
     /* ===== スマホレイアウト（盤面主役・縦長・1画面完結 + 下部パネル） ===== */
     @media (max-width: 768px) {
+      /* 上部ヘッダー帯：ステータス */
+      .mobile-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 2px 6px 6px;
+      }
+
+      .mobile-header .header-stat {
+        flex: 1;
+        min-width: 0;
+        text-align: center;
+      }
+
+      .mobile-header .label {
+        display: block;
+        font-size: 9px;
+        opacity: 0.75;
+        letter-spacing: 0.3px;
+        line-height: 1.2;
+      }
+
+      .mobile-header .value {
+        display: block;
+        font-size: 14px;
+        font-weight: 800;
+        color: #00e5ff;
+        text-shadow: 0 0 8px rgba(0, 255, 255, 0.55);
+        line-height: 1.2;
+      }
+
       html {
         height: 100%;
         overflow: hidden;
@@ -244,6 +276,30 @@
         box-shadow: 0 0 10px rgba(0, 255, 255, 0.25);
       }
 
+      /* ポーズ時ブラックアウト */
+      .pause-overlay {
+        position: absolute;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.9);
+        border-radius: 12px;
+        z-index: 3;
+      }
+
+      .pause-overlay.is-active {
+        display: flex;
+      }
+
+      .end-btn {
+        width: min(220px, 100%);
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #ff5252, #7b2ff7);
+        box-shadow: 0 0 16px rgba(255, 82, 82, 0.45);
+      }
+
       /* HUD カラム：右側の余白帯を専用領域として利用 */
       .hud-column {
         flex: 0 0 92px;            /* HUD の固定幅（board 計算時に控除する） */
@@ -282,86 +338,10 @@
         box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
       }
 
-      /* 下部操作パネル（score / level / lines / buttons） */
-      .side-panel {
-        position: fixed;
-        left: 50%;
-        transform: translateX(-50%) translateY(calc(100% - 32px));
-        bottom: 0;
-        width: 100%;
-        max-width: 520px;
-        flex-direction: column;
-        align-items: stretch;
-        gap: 6px;
-        padding: 4px 8px 8px;
-        background: linear-gradient(to top, rgba(2, 4, 18, 0.95), rgba(5, 10, 32, 0.9));
-        border-radius: 16px 16px 0 0;
-        box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.9);
-        transition: transform 0.25s ease-out;
-        z-index: 10;
-      }
-
-      .side-panel.is-open {
-        transform: translateX(-50%) translateY(0);
-      }
-
-      /* 閉じた状態では細いバーのみ表示（中身は非表示） */
-      .side-panel-collapsed-label {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        padding: 4px 0;
-        cursor: pointer;
-      }
-
-      .side-panel-handle {
-        width: 36px;
-        height: 4px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.35);
-      }
-
-      .side-panel-label-text {
-        font-size: 10px;
-        opacity: 0.8;
-      }
-
-      .side-panel:not(.is-open) .stat-grid,
-      .side-panel:not(.is-open) .button-group {
-        display: none;
-      }
-
-      /* 情報パネル：3列コンパクトカード */
-      .panel-box {
-        width: 100%;
-        padding: 4px 6px;
-        border-radius: 8px;
-        box-shadow: 0 0 8px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 255, 255, 0.08);
-      }
-
-      .panel-box h3 {
-        font-size: 9px;
-        margin-bottom: 1px;
-        letter-spacing: 0.3px;
-        line-height: 1.2;
-      }
-
-      .panel-box .value {
-        font-size: 16px;
-        font-weight: 700;
-        line-height: 1.2;
-      }
-
-      .stat-grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 4px;
-      }
-
-      .stat-grid .panel-box {
-        width: 100%;
-        min-height: 0;
+      /* 下部ステータス/操作/折りたたみバーは廃止（side-panel はモバイルで非表示） */
+      .side-panel,
+      #mobilePanelToggle {
+        display: none !important;
       }
 
       /* ボタン：HUD 内では縦並び、他では必要に応じてレイアウト */
@@ -393,11 +373,31 @@
 
       <!-- 中央ゲームカード -->
       <main class="game-card">
+        <!-- 上部ヘッダー帯：スコア / レベル / ライン（モバイル仕様） -->
+        <div class="mobile-header">
+          <div class="header-stat">
+            <span class="label">スコア</span>
+            <span class="value" id="score">0</span>
+          </div>
+          <div class="header-stat">
+            <span class="label">レベル</span>
+            <span class="value" id="level">1</span>
+          </div>
+          <div class="header-stat">
+            <span class="label">ライン</span>
+            <span class="value" id="lines">0</span>
+          </div>
+        </div>
+
         <div class="game-container">
           <!-- 左カラム：実プレイ盤面 -->
           <section class="board-wrapper">
             <!-- JS側で width/height を設定していても OK。CSS でリサイズ。 -->
             <canvas id="board"></canvas>
+            <!-- ポーズ時ブラックアウト + 終了ボタン（モバイル仕様） -->
+            <div class="pause-overlay" id="pauseOverlay" aria-hidden="true">
+              <button type="button" class="btn end-btn" id="endBtn">ゲームを終了する</button>
+            </div>
           </section>
 
           <!-- 右カラム：HUD（ネクスト + スタート/ポーズ） -->
@@ -408,36 +408,11 @@
               <canvas id="next" width="160" height="160"></canvas>
             </div>
 
-            <!-- 操作ボタン（縦並び） -->
-            <div class="button-group">
+            <!-- 操作ボタン（単一：スタート→ポーズ/再開に切替） -->
+            <div class="button-group hud-controls">
               <button type="button" class="btn" id="startBtn">スタート</button>
-              <button type="button" class="btn" id="pauseBtn">ポーズ</button>
+              <button type="button" class="btn" id="pauseBtn" style="display:none">ポーズ</button>
             </div>
-          </aside>
-
-          <!-- 情報パネル：スコア / レベル / ライン（モバイルでは下部パネル） -->
-          <aside class="side-panel">
-            <button type="button" class="side-panel-collapsed-label" id="mobilePanelToggle">
-              <span class="side-panel-handle"></span>
-              <span class="side-panel-label-text">ステータス / 操作</span>
-            </button>
-
-            <!-- スコア / レベル / ライン は PC では縦、スマホでは 3列グリッド -->
-            <div class="stat-grid">
-              <div class="panel-box">
-                <h3>スコア</h3>
-                <div class="value" id="score">0</div>
-              </div>
-              <div class="panel-box">
-                <h3>レベル</h3>
-                <div class="value" id="level">1</div>
-              </div>
-              <div class="panel-box">
-                <h3>ライン</h3>
-                <div class="value" id="lines">0</div>
-              </div>
-            </div>
-
           </aside>
         </div>
       </main>
@@ -456,10 +431,10 @@
       const linesEl     = document.getElementById('lines');
       const startBtn    = document.getElementById('startBtn');
       const pauseBtn    = document.getElementById('pauseBtn');
-      const mobilePanelToggle = document.getElementById('mobilePanelToggle');
-      const sidePanelEl = document.querySelector('.side-panel');
+      const pauseOverlay = document.getElementById('pauseOverlay');
+      const endBtn = document.getElementById('endBtn');
 
-      if (!boardCanvas || !nextCanvas || !scoreEl || !levelEl || !linesEl || !startBtn || !pauseBtn) {
+      if (!boardCanvas || !nextCanvas || !scoreEl || !levelEl || !linesEl || !startBtn || !pauseBtn || !pauseOverlay || !endBtn) {
         console.error('必要な要素が見つかりません');
         return;
       }
@@ -529,6 +504,7 @@
       let animationId;
       let paused = false;
       let gameOver = false;
+      let started = false;
 
       function createEmptyBoard() {
         return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
@@ -732,13 +708,23 @@
         updateUI();
         if (animationId) cancelAnimationFrame(animationId);
         animationId = requestAnimationFrame(loop);
+        started = true;
+        startBtn.textContent = 'ポーズ';
+        pauseOverlay.classList.remove('is-active');
+        pauseOverlay.setAttribute('aria-hidden', 'true');
       }
 
       function togglePause() {
-        if (gameOver) return;
+        if (!started || gameOver) return;
         paused = !paused;
-        pauseBtn.textContent = paused ? '再開' : 'ポーズ';
-        if (!paused) {
+        startBtn.textContent = paused ? '再開' : 'ポーズ';
+        if (paused) {
+          pauseOverlay.classList.add('is-active');
+          pauseOverlay.setAttribute('aria-hidden', 'false');
+          return;
+        } else {
+          pauseOverlay.classList.remove('is-active');
+          pauseOverlay.setAttribute('aria-hidden', 'true');
           lastDropTime = performance.now();
           animationId = requestAnimationFrame(loop);
         }
@@ -796,8 +782,12 @@
         drawBoard();
       });
 
-      // ボタンイベント
-      startBtn.addEventListener('click', startGame);
+      // ボタンイベント（スタート前: startGame / 開始後: togglePause）
+      startBtn.addEventListener('click', () => {
+        if (!started) startGame();
+        else togglePause();
+      });
+      // pauseBtn はDOM上の互換IDとして残すが、表示はしない
       pauseBtn.addEventListener('click', togglePause);
 
       // スマホ時：canvas#board の見た目サイズを、内部解像度に対して等倍スケールで拡大
@@ -850,17 +840,41 @@
         }
       }
 
-      // モバイル下部パネル開閉（board のサイズは変えない）
-      if (mobilePanelToggle && sidePanelEl) {
-        sidePanelEl.classList.remove('is-open');
-        mobilePanelToggle.addEventListener('click', () => {
-          sidePanelEl.classList.toggle('is-open');
-        });
-      }
+      // 終了ボタン（ポーズ中のブラックアウト上）
+      endBtn.addEventListener('click', () => {
+        if (animationId) cancelAnimationFrame(animationId);
+        started = false;
+        paused = false;
+        gameOver = false;
 
-      // 初期状態
+        board = createEmptyBoard();
+        current = null;
+        nextPiece = null;
+        score = 0;
+        level = 1;
+        lines = 0;
+        updateUI();
+
+        ctx.clearRect(0, 0, boardCanvas.width, boardCanvas.height);
+        nctx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
+        drawBoard();
+
+        pauseOverlay.classList.remove('is-active');
+        pauseOverlay.setAttribute('aria-hidden', 'true');
+        startBtn.textContent = 'スタート';
+      });
+
+      // 初期状態（開始前）
       board = createEmptyBoard();
-      score = level = lines = 0;
+      score = 0;
+      level = 1;
+      lines = 0;
+      started = false;
+      paused = false;
+      gameOver = false;
+      startBtn.textContent = 'スタート';
+      pauseOverlay.classList.remove('is-active');
+      pauseOverlay.setAttribute('aria-hidden', 'true');
       drawBoard();
       drawNext();
       updateUI();
