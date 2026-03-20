@@ -788,14 +788,49 @@
       });
 
       // モバイル用タッチ操作（canvas#board のみ）
-      const TOUCH_TAP_MAX = 12;      // これ未満はタップ（回転）
-      const TOUCH_SWIPE_MIN = 28;    // これ以上でスワイプ（左右1マス / 下はハードドロップ）
-      let touchTrackingId = null;    // 追跡中の指の identifier
+      const TOUCH_TAP_MAX = 12;           // タップ（回転）: 開始位置からの移動がこれ未満
+      const TOUCH_STEP_X = 22;            // 横ドラッグ: この px ごとに 1 マス（基準点を更新して連続移動）
+      const TOUCH_DOWN_MIN_DIST = 40;     // 下フリック: この px 以上下に動いた
+      const TOUCH_DOWN_MAX_DURATION = 320; // 下フリック: 指を離すまでの時間がこれ以下（素早い操作）
+      const TOUCH_DOWN_MIN_VELOCITY = 0.35; // px/ms、下方向の最低速度
+
+      let touchTrackingId = null;
       let touchStartX = 0;
       let touchStartY = 0;
+      let touchStartTime = 0;
+      let touchAnchorX = 0; // 横 1 マスごとの累積基準（クライアント X）
+      let touchDidHorizontalStep = false; // このジェスチャーで左右に 1 マス以上動かしたら hardDrop しない
 
       function canUseBoardTouch() {
         return started && current && !paused && !gameOver;
+      }
+
+      /** 横に dir マス（-1 or +1）だけ移動を試みる（キーボード左右と同じ） */
+      function touchTryMoveX(dir) {
+        const moved = { ...current, x: current.x + dir };
+        if (!collide(board, moved)) {
+          current.x += dir;
+          return true;
+        }
+        return false;
+      }
+
+      /** 指位置に応じて stepX 単位で 1 マスずつ横移動（1 touchmove 内でもループで順次処理） */
+      function touchApplyHorizontalSteps(fingerX) {
+        let movedAny = false;
+        while (fingerX - touchAnchorX >= TOUCH_STEP_X) {
+          touchTryMoveX(1);
+          touchAnchorX += TOUCH_STEP_X;
+          touchDidHorizontalStep = true;
+          movedAny = true;
+        }
+        while (fingerX - touchAnchorX <= -TOUCH_STEP_X) {
+          touchTryMoveX(-1);
+          touchAnchorX -= TOUCH_STEP_X;
+          touchDidHorizontalStep = true;
+          movedAny = true;
+        }
+        return movedAny;
       }
 
       boardCanvas.addEventListener('touchstart', (e) => {
@@ -807,12 +842,31 @@
         touchTrackingId = t0.identifier;
         touchStartX = t0.clientX;
         touchStartY = t0.clientY;
+        touchStartTime = performance.now();
+        touchAnchorX = t0.clientX;
+        touchDidHorizontalStep = false;
       }, { passive: true });
 
       boardCanvas.addEventListener('touchmove', (e) => {
         if (touchTrackingId === null) return;
         if (e.touches.length !== 1 || e.touches[0].identifier !== touchTrackingId) return;
         e.preventDefault();
+
+        if (!canUseBoardTouch()) return;
+
+        const t = e.touches[0];
+        const totalDx = t.clientX - touchStartX;
+        const totalDy = t.clientY - touchStartY;
+        const adx = Math.abs(totalDx);
+        const ady = Math.abs(totalDy);
+
+        // まだ「タップ範囲」内なら横追従しない（誤爆防止）
+        if (adx < TOUCH_TAP_MAX && ady < TOUCH_TAP_MAX) return;
+
+        // 斜めは横優先: 横成分の方が大きいときだけドラッグ追従
+        if (adx >= ady) {
+          if (touchApplyHorizontalSteps(t.clientX)) drawBoard();
+        }
       }, { passive: false });
 
       boardCanvas.addEventListener('touchcancel', () => {
@@ -835,12 +889,20 @@
         e.preventDefault();
 
         if (!canUseBoardTouch()) return;
+
         const dx = t.clientX - touchStartX;
         const dy = t.clientY - touchStartY;
         const adx = Math.abs(dx);
         const ady = Math.abs(dy);
+        const duration = performance.now() - touchStartTime;
+        const velocityY = dy / Math.max(duration, 1); // 下方向が正
 
-        // タップ：移動量が小さい → 回転（キーボードの回転と同じ）
+        // 最後の touchmove が届かない場合に備え、横優勢なら離脱時も未消化の横ステップを反映
+        if (!(adx < TOUCH_TAP_MAX && ady < TOUCH_TAP_MAX) && adx >= ady) {
+          touchApplyHorizontalSteps(t.clientX);
+        }
+
+        // タップ：移動量が小さい → 回転
         if (adx < TOUCH_TAP_MAX && ady < TOUCH_TAP_MAX) {
           const rotatedShape = rotate(current.shape);
           const moved = { ...current, shape: rotatedShape };
@@ -849,20 +911,25 @@
           return;
         }
 
-        // 斜めは移動量の大きい軸を優先
-        if (adx >= ady && adx >= TOUCH_SWIPE_MIN) {
-          if (dx > 0) {
-            const moved = { ...current, x: current.x + 1 };
-            if (!collide(board, moved)) current.x++;
-          } else {
-            const moved = { ...current, x: current.x - 1 };
-            if (!collide(board, moved)) current.x--;
-          }
+        // 横追従中は hardDrop しない（競合防止）
+        if (touchDidHorizontalStep) {
           drawBoard();
           return;
         }
-        if (ady > adx && dy >= TOUCH_SWIPE_MIN) {
+
+        // 縦優勢 + 十分な下距離 + 素早いスワイプ → ハードドロップ
+        const verticalDominant = ady > adx;
+        const quickEnough = duration <= TOUCH_DOWN_MAX_DURATION;
+        const fastEnoughDown = velocityY >= TOUCH_DOWN_MIN_VELOCITY;
+        if (
+          verticalDominant &&
+          dy >= TOUCH_DOWN_MIN_DIST &&
+          quickEnough &&
+          fastEnoughDown
+        ) {
           hardDrop();
+          drawBoard();
+        } else {
           drawBoard();
         }
       }, { passive: false });
