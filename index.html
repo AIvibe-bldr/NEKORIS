@@ -2,8 +2,8 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <!-- スマホ対応 viewport（dvh 対応・ノッチ考慮） -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <!-- スマホ対応 viewport -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>テトリス</title>
 
   <style>
@@ -165,29 +165,115 @@
       box-shadow: 0 0 10px rgba(0, 188, 212, 0.4);
     }
 
-    /* ===== スマホレイアウト（盤面主役・縦長・1画面完結 + 下部パネル） ===== */
+    /* ===== スマホレイアウト（1カラム縦並び） ===== */
     @media (max-width: 768px) {
-      /* 上部ヘッダー帯：ステータス */
-      .mobile-header {
-        display: flex;
+      body {
+        align-items: flex-start;
+        padding: 16px 0;
+      }
+
+      .app-shell {
+        padding: 12px 8px 24px;
+      }
+
+      /* 装飾パネルは非表示（ゲーム盤面優先） */
+      .side-deco {
+        display: none;
+      }
+
+      .app-frame {
+        display: block;
+      }
+
+      .game-card {
+        padding: 12px 10px 16px;
+        border-radius: 0;
+        box-shadow: none;
+        background:
+          radial-gradient(circle at top, rgba(0,255,255,0.2), transparent 55%),
+          rgba(5, 8, 24, 0.97);
+      }
+
+      /* 1,2,5. スマホでは 1 カラム縦並び & 固定幅撤廃 */
+      .game-container {
+        flex-direction: column;
         align-items: center;
-        justify-content: space-between;
+        gap: 16px;
+        width: 100%;
+        max-width: none;
+      }
+
+      /* 6. board-wrapper は width: min(92vw, 420px)、aspect-ratio: 1 / 2 */
+      .board-wrapper {
+        width: min(92vw, 420px);
+        max-width: 420px;
+        padding: 6px;
+      }
+
+      /* 7. canvas#board は width:100%, height:100%（aspect-ratioに従う） */
+      canvas#board {
+        width: 100%;
+        height: 100%;
+        aspect-ratio: 1 / 2;
+      }
+
+      /* 3,8. 盤面の下に：スコア/レベル/ライン → ネクスト → ボタン */
+      .side-panel {
+        width: 100%;
+        max-width: 420px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+      }
+
+      .panel-box {
+        width: 100%;
+      }
+
+      .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 8px;
-        padding: 2px 6px 6px;
+      }
+
+      .stat-grid .panel-box {
+        width: 100%;
+      }
+
+      canvas#next {
+        width: 100%;
+        height: auto;
+        max-height: 220px;
+      }
+
+      .btn {
+        font-size: 14px;
+        padding-block: 10px;
+      }
+
+      /* 仕様変更: 下部バー廃止 */
+      .side-panel {
+        display: none !important;
+      }
+
+      .mobile-header {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+        margin-bottom: 8px;
       }
 
       .mobile-header .header-stat {
-        flex: 1;
-        min-width: 0;
+        background: rgba(8, 12, 30, 0.9);
+        border-radius: 8px;
+        padding: 4px 6px;
         text-align: center;
       }
 
       .mobile-header .label {
         display: block;
         font-size: 9px;
-        opacity: 0.75;
-        letter-spacing: 0.3px;
-        line-height: 1.2;
+        opacity: 0.7;
       }
 
       .mobile-header .value {
@@ -195,97 +281,74 @@
         font-size: 14px;
         font-weight: 800;
         color: #00e5ff;
-        text-shadow: 0 0 8px rgba(0, 255, 255, 0.55);
-        line-height: 1.2;
-      }
-
-      html {
-        height: 100%;
-        overflow: hidden;
-      }
-
-      body {
-        margin: 0;
-        min-height: 100%;
-        height: 100dvh;
-        max-height: 100dvh;
-        overflow: hidden;
-        align-items: stretch;
-        padding: 0;
-      }
-
-      .app-shell {
-        padding: 6px 8px;
-        height: 100%;
-        min-height: 0;
-        overflow: hidden;
-      }
-
-      .app-frame {
-        display: block;
-        height: 100%;
-        min-height: 0;
-        overflow: hidden;
-      }
-
-      .side-deco {
-        display: none;
-      }
-
-      .game-card {
-        padding: 6px 8px;
-        height: 100%;
-        min-height: 0;
-        overflow: hidden;
-        border-radius: 12px;
-        box-shadow: 0 0 12px rgba(0, 255, 255, 0.15);
-        background:
-          radial-gradient(circle at top, rgba(0,255,255,0.12), transparent 55%),
-          rgba(5, 8, 24, 0.97);
       }
 
       .game-container {
-        position: relative;
-        display: flex;
-        flex-direction: row;        /* 左: board / 右: HUD の2カラム */
+        flex-direction: row;
         align-items: flex-start;
-        justify-content: center;
+        justify-content: flex-start;
         gap: 8px;
-        width: 100%;
-        max-width: none;
-        height: 100%;
-        min-height: 0;
-        overflow: hidden;
       }
 
-      /* 盤面：主役。左カラムに配置（横幅は JS で決まる） */
       .board-wrapper {
-        flex: 0 0 auto;
-        padding: 4px;
-        display: flex;
-        justify-content: flex-start;
-        align-items: center;
-        border-radius: 12px;
-        box-shadow: 0 0 16px rgba(0, 255, 255, 0.2);
+        position: relative;
+        flex: 1 1 auto;
+        min-width: 0;
       }
 
       .board-wrapper canvas#board {
-        display: block;
-        margin: 0;
-        border-radius: 8px;
-        box-shadow: 0 0 10px rgba(0, 255, 255, 0.25);
+        width: 100%;
+        height: auto;
+        aspect-ratio: 1 / 2;
       }
 
-      /* ポーズ時ブラックアウト */
+      .hud-column {
+        flex: 0 0 96px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .next-widget {
+        background: rgba(8, 12, 30, 0.9);
+        border-radius: 8px;
+        padding: 4px;
+        text-align: center;
+      }
+
+      .next-widget h3 {
+        font-size: 9px;
+        margin-bottom: 2px;
+      }
+
+      .next-widget canvas#next {
+        width: 64px;
+        height: 64px;
+        margin: 0 auto;
+      }
+
+      .hud-controls {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .hud-controls .btn {
+        width: 100%;
+        font-size: 12px;
+        padding: 8px 6px;
+        border-radius: 9px;
+      }
+
       .pause-overlay {
         position: absolute;
-        inset: 0;
+        inset: 6px;
         display: none;
         align-items: center;
         justify-content: center;
         background: rgba(0, 0, 0, 0.9);
         border-radius: 12px;
-        z-index: 3;
+        z-index: 5;
       }
 
       .pause-overlay.is-active {
@@ -293,74 +356,10 @@
       }
 
       .end-btn {
-        width: min(220px, 100%);
+        width: min(220px, calc(100% - 20px));
         padding: 10px 12px;
         border-radius: 10px;
         background: linear-gradient(135deg, #ff5252, #7b2ff7);
-        box-shadow: 0 0 16px rgba(255, 82, 82, 0.45);
-      }
-
-      /* HUD カラム：右側の余白帯を専用領域として利用 */
-      .hud-column {
-        flex: 0 0 92px;            /* HUD の固定幅（board 計算時に控除する） */
-        display: flex;
-        flex-direction: column;
-        align-items: stretch;
-        justify-content: flex-start;
-        gap: 8px;
-        padding-top: 8px;
-      }
-
-      /* NEXT：HUD カラム上部に表示する小型ウィジェット */
-      .next-widget {
-        padding: 2px 4px 4px;
-        border-radius: 8px;
-        background: rgba(4, 10, 32, 0.9);
-        box-shadow: 0 0 8px rgba(0, 0, 0, 0.6);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-      }
-
-      .next-widget h3 {
-        font-size: 9px;
-        margin-bottom: 1px;
-        line-height: 1.1;
-      }
-
-      .next-widget canvas#next {
-        display: block;
-        width: 56px;
-        height: 56px;
-        max-width: 56px;
-        max-height: 56px;
-        border-radius: 4px;
-        box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
-      }
-
-      /* 下部ステータス/操作/折りたたみバーは廃止（side-panel はモバイルで非表示） */
-      .side-panel,
-      #mobilePanelToggle {
-        display: none !important;
-      }
-
-      /* ボタン：HUD 内では縦並び、他では必要に応じてレイアウト */
-      .button-group {
-        flex-direction: column;
-        justify-content: flex-start;
-        gap: 8px;
-        margin-top: 0;
-      }
-
-      .button-group .btn {
-        flex: 1;
-        min-width: 0;
-      }
-
-      .btn {
-        font-size: 12px;
-        padding: 8px 10px;
-        border-radius: 8px;
       }
     }
   </style>
@@ -373,7 +372,7 @@
 
       <!-- 中央ゲームカード -->
       <main class="game-card">
-        <!-- 上部ヘッダー帯：スコア / レベル / ライン（モバイル仕様） -->
+        <!-- 上部ヘッダー帯 -->
         <div class="mobile-header">
           <div class="header-stat">
             <span class="label">スコア</span>
@@ -390,26 +389,21 @@
         </div>
 
         <div class="game-container">
-          <!-- 左カラム：実プレイ盤面 -->
+          <!-- 左：盤面 -->
           <section class="board-wrapper">
-            <!-- JS側で width/height を設定していても OK。CSS でリサイズ。 -->
             <canvas id="board"></canvas>
-            <!-- ポーズ時ブラックアウト + 終了ボタン（モバイル仕様） -->
             <div class="pause-overlay" id="pauseOverlay" aria-hidden="true">
               <button type="button" class="btn end-btn" id="endBtn">ゲームを終了する</button>
             </div>
           </section>
 
-          <!-- 右カラム：HUD（ネクスト + スタート/ポーズ） -->
+          <!-- 右：HUD（next + start/pause） -->
           <aside class="hud-column">
-            <!-- ネクスト -->
             <div class="next-widget">
               <h3>ネクスト</h3>
               <canvas id="next" width="160" height="160"></canvas>
             </div>
-
-            <!-- 操作ボタン（単一：スタート→ポーズ/再開に切替） -->
-            <div class="button-group hud-controls">
+            <div class="hud-controls">
               <button type="button" class="btn" id="startBtn">スタート</button>
               <button type="button" class="btn" id="pauseBtn" style="display:none">ポーズ</button>
             </div>
@@ -423,6 +417,7 @@
 
   <!-- ゲームロジック JavaScript -->
   <script>
+    // DOM構築完了後に初期化
     window.addEventListener('DOMContentLoaded', () => {
       const boardCanvas = document.getElementById('board');
       const nextCanvas  = document.getElementById('next');
@@ -617,6 +612,7 @@
             if (type) drawCell(x, y, type);
           }
         }
+        if (!current) return;
         const { shape, x: px, y: py, type } = current;
         for (let y = 0; y < shape.length; y++) {
           for (let x = 0; x < shape[y].length; x++) {
@@ -709,6 +705,7 @@
         if (animationId) cancelAnimationFrame(animationId);
         animationId = requestAnimationFrame(loop);
         started = true;
+        paused = false;
         startBtn.textContent = 'ポーズ';
         pauseOverlay.classList.remove('is-active');
         pauseOverlay.setAttribute('aria-hidden', 'true');
@@ -722,9 +719,10 @@
           pauseOverlay.classList.add('is-active');
           pauseOverlay.setAttribute('aria-hidden', 'false');
           return;
-        } else {
-          pauseOverlay.classList.remove('is-active');
-          pauseOverlay.setAttribute('aria-hidden', 'true');
+        }
+        pauseOverlay.classList.remove('is-active');
+        pauseOverlay.setAttribute('aria-hidden', 'true');
+        if (!paused) {
           lastDropTime = performance.now();
           animationId = requestAnimationFrame(loop);
         }
@@ -782,71 +780,19 @@
         drawBoard();
       });
 
-      // ボタンイベント（スタート前: startGame / 開始後: togglePause）
+      // ボタンイベント（開始前: スタート / 開始後: ポーズ・再開）
       startBtn.addEventListener('click', () => {
         if (!started) startGame();
         else togglePause();
       });
-      // pauseBtn はDOM上の互換IDとして残すが、表示はしない
       pauseBtn.addEventListener('click', togglePause);
 
-      // スマホ時：canvas#board の見た目サイズを、内部解像度に対して等倍スケールで拡大
-      // ※ 下部パネル open / closed によって board のサイズは変えない（常に同じスケール）
-      function layoutMobileBoard() {
-        const isMobile = window.innerWidth <= 768;
-        const baseW = boardCanvas.width;   // 240
-        const baseH = boardCanvas.height;  // 480
-        if (!isMobile) {
-          boardCanvas.style.width  = '';
-          boardCanvas.style.height = '';
-          return;
-        }
-
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        const wrapper = document.querySelector('.board-wrapper');
-        const hudColumn = document.querySelector('.hud-column');
-
-        // HUD カラムの幅を引いた残りを盤面の利用可能幅とする
-        const hudWidth = hudColumn ? (hudColumn.offsetWidth || 92) : 92;
-        const horizontalGap = 8;
-        const availableWidth = Math.max(120, vw * 0.98 - hudWidth - horizontalGap);
-
-        // ステータスバー分として常に一定の高さだけ確保（open / closed に依存させない）
-        const fixedBarHeight = Math.max(56, vh * 0.2);
-        const reservedTop = 56; // NEXT ウィジェット＋上部余白
-        const verticalMargin = 12;
-        const availableHeight = Math.max(
-          120,
-          vh - reservedTop - fixedBarHeight - verticalMargin
-        );
-
-        // 縦横比を保ったまま最大化するための等倍スケール
-        const scale = Math.min(
-          availableWidth / baseW,
-          availableHeight / baseH,
-          2.5
-        );
-
-        const displayW = Math.floor(baseW * scale);
-        const displayH = Math.floor(baseH * scale);
-
-        boardCanvas.style.width  = displayW + 'px';
-        boardCanvas.style.height = displayH + 'px';
-
-        if (wrapper) {
-          wrapper.style.width  = displayW + 'px';
-          wrapper.style.height = displayH + 'px';
-        }
-      }
-
-      // 終了ボタン（ポーズ中のブラックアウト上）
+      // 終了ボタン（ポーズ時オーバーレイ上）
       endBtn.addEventListener('click', () => {
         if (animationId) cancelAnimationFrame(animationId);
         started = false;
         paused = false;
         gameOver = false;
-
         board = createEmptyBoard();
         current = null;
         nextPiece = null;
@@ -854,17 +800,14 @@
         level = 1;
         lines = 0;
         updateUI();
-
-        ctx.clearRect(0, 0, boardCanvas.width, boardCanvas.height);
         nctx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
         drawBoard();
-
         pauseOverlay.classList.remove('is-active');
         pauseOverlay.setAttribute('aria-hidden', 'true');
         startBtn.textContent = 'スタート';
       });
 
-      // 初期状態（開始前）
+      // 初期状態
       board = createEmptyBoard();
       score = 0;
       level = 1;
@@ -878,10 +821,6 @@
       drawBoard();
       drawNext();
       updateUI();
-
-      layoutMobileBoard();
-      window.addEventListener('resize', layoutMobileBoard);
-      setTimeout(layoutMobileBoard, 150);
     });
   </script>
 </body>
