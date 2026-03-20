@@ -94,6 +94,9 @@
       background: radial-gradient(circle at top, #050816 0, #000 60%);
       border-radius: 14px;
       box-shadow: 0 0 18px rgba(0, 255, 255, 0.4);
+      touch-action: none; /* 盤面タッチでページスクロールしない */
+      -webkit-user-select: none;
+      user-select: none;
     }
 
     /* ===== 右側情報パネル（PC）===== */
@@ -300,6 +303,7 @@
         width: 100%;
         height: auto;
         aspect-ratio: 1 / 2;
+        touch-action: none;
       }
 
       .hud-column {
@@ -779,6 +783,82 @@
         }
         drawBoard();
       });
+
+      // モバイル用タッチ操作（canvas#board のみ）
+      const TOUCH_TAP_MAX = 12;      // これ未満はタップ（回転）
+      const TOUCH_SWIPE_MIN = 28;    // これ以上でスワイプ（左右1マス / 下はハードドロップ）
+      let touchTrackingId = null;    // 追跡中の指の identifier
+      let touchStartX = 0;
+      let touchStartY = 0;
+
+      function canUseBoardTouch() {
+        return started && current && !paused && !gameOver;
+      }
+
+      boardCanvas.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) {
+          touchTrackingId = null;
+          return;
+        }
+        const t0 = e.touches[0];
+        touchTrackingId = t0.identifier;
+        touchStartX = t0.clientX;
+        touchStartY = t0.clientY;
+      }, { passive: true });
+
+      boardCanvas.addEventListener('touchmove', (e) => {
+        if (touchTrackingId === null) return;
+        if (e.touches.length !== 1 || e.touches[0].identifier !== touchTrackingId) return;
+        e.preventDefault();
+      }, { passive: false });
+
+      boardCanvas.addEventListener('touchcancel', () => {
+        touchTrackingId = null;
+      }, { passive: true });
+
+      boardCanvas.addEventListener('touchend', (e) => {
+        if (touchTrackingId === null) return;
+        let t = null;
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          if (e.changedTouches[i].identifier === touchTrackingId) {
+            t = e.changedTouches[i];
+            break;
+          }
+        }
+        if (!t) return;
+        touchTrackingId = null;
+        if (!canUseBoardTouch()) return;
+        const dx = t.clientX - touchStartX;
+        const dy = t.clientY - touchStartY;
+        const adx = Math.abs(dx);
+        const ady = Math.abs(dy);
+
+        // タップ：移動量が小さい → 回転（キーボードの回転と同じ）
+        if (adx < TOUCH_TAP_MAX && ady < TOUCH_TAP_MAX) {
+          const rotatedShape = rotate(current.shape);
+          const moved = { ...current, shape: rotatedShape };
+          if (!collide(board, moved)) current.shape = rotatedShape;
+          drawBoard();
+          return;
+        }
+
+        // 斜めは移動量の大きい軸を優先
+        if (adx >= ady && adx >= TOUCH_SWIPE_MIN) {
+          if (dx > 0) {
+            const moved = { ...current, x: current.x + 1 };
+            if (!collide(board, moved)) current.x++;
+          } else {
+            const moved = { ...current, x: current.x - 1 };
+            if (!collide(board, moved)) current.x--;
+          }
+          drawBoard();
+          return;
+        }
+        if (ady > adx && dy >= TOUCH_SWIPE_MIN) {
+          hardDrop();
+          drawBoard();
+        }
+      }, { passive: true });
 
       // ボタンイベント（開始前: スタート / 開始後: ポーズ・再開）
       startBtn.addEventListener('click', () => {
