@@ -2,8 +2,8 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <!-- スマホ対応 viewport -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- スマホ対応 viewport（ゲーム用：ピンチ・ダブルタップ等のズームを抑止しやすくする） -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>テトリス</title>
 
   <style>
@@ -83,6 +83,8 @@
       box-shadow:
         0 0 32px rgba(0, 255, 255, 0.25),
         inset 0 0 20px rgba(0, 0, 0, 0.7);
+      /* iOS Safari のダブルタップズーム抑止の補助（子の canvas と併用） */
+      touch-action: manipulation;
     }
 
     /* 盤面キャンバス（内部ロジック上は 10x20 想定） */
@@ -94,7 +96,8 @@
       background: radial-gradient(circle at top, #050816 0, #000 60%);
       border-radius: 14px;
       box-shadow: 0 0 18px rgba(0, 255, 255, 0.4);
-      touch-action: none; /* 盤面タッチでページスクロールしない */
+      /* manipulation: ダブルタップズーム無効化。スワイプ時は touchmove で preventDefault しスクロールを抑止 */
+      touch-action: manipulation;
       -webkit-user-select: none;
       user-select: none;
     }
@@ -827,6 +830,10 @@
         }
         if (!t) return;
         touchTrackingId = null;
+
+        // iPhone Safari: 連続タップ時のダブルタップズーム等のデフォルト動作を抑止（passive: false 必須）
+        e.preventDefault();
+
         if (!canUseBoardTouch()) return;
         const dx = t.clientX - touchStartX;
         const dy = t.clientY - touchStartY;
@@ -858,7 +865,7 @@
           hardDrop();
           drawBoard();
         }
-      }, { passive: true });
+      }, { passive: false });
 
       // ボタンイベント（開始前: スタート / 開始後: ポーズ・再開）
       startBtn.addEventListener('click', () => {
