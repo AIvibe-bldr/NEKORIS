@@ -88,6 +88,77 @@
       touch-action: manipulation;
     }
 
+    /* ポーズ（盤面内のみ。gameover-overlay とは別要素・z-index も下） */
+    .pause-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      background: rgba(0, 0, 0, 0.88);
+      border-radius: 14px;
+      z-index: 5;
+      padding: 14px 12px;
+      text-align: center;
+      overflow-y: auto;
+      box-sizing: border-box;
+    }
+
+    .pause-overlay.is-active {
+      display: flex;
+    }
+
+    .pause-overlay-inner {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      width: 100%;
+      max-width: 280px;
+    }
+
+    .pause-title {
+      margin: 0;
+      font-size: clamp(1.15rem, 4vw, 1.5rem);
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      color: #7ee8ff;
+      text-shadow: 0 0 14px rgba(0, 230, 255, 0.45);
+    }
+
+    .pause-help {
+      margin: 0;
+      padding: 0 4px;
+      list-style: none;
+      font-size: clamp(0.8rem, 3.2vw, 0.95rem);
+      line-height: 1.65;
+      color: rgba(255, 255, 255, 0.92);
+      text-align: center;
+    }
+
+    .pause-help li {
+      padding: 2px 0;
+    }
+
+    .pause-help-note {
+      margin: 4px 0 0;
+      font-size: clamp(0.72rem, 2.8vw, 0.82rem);
+      line-height: 1.5;
+      color: rgba(255, 255, 255, 0.55);
+    }
+
+    .pause-overlay .end-btn {
+      margin-top: 6px;
+      flex-shrink: 0;
+      width: min(260px, 100%);
+      padding: 10px 14px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #ff5252, #7b2ff7);
+    }
+
     /* ゲームオーバー（canvas#board 領域のみ覆う） */
     .gameover-overlay {
       position: absolute;
@@ -124,8 +195,6 @@
       width: min(260px, 100%);
     }
 
-    /* 「最初から」は .btn-primary と同一見た目（下の .btn-primary 定義で共有） */
-
     .gameover-overlay .exit-btn {
       width: 100%;
       padding: 10px 14px;
@@ -136,11 +205,6 @@
       cursor: pointer;
       background: linear-gradient(135deg, #ff5252, #7b2ff7);
       box-shadow: 0 0 14px rgba(255, 82, 82, 0.45);
-    }
-
-    .gameover-overlay .restart-btn:active,
-    .gameover-overlay .exit-btn:active {
-      transform: translateY(1px);
     }
 
     /* 盤面キャンバス（内部ロジック上は 10x20 想定） */
@@ -227,9 +291,9 @@
       box-shadow: 0 0 10px rgba(0, 188, 212, 0.4);
     }
 
-    /* 共通プライマリボタン（CSS Modules の composes は使えないため .restart-btn とセレクタで共有） */
+    /* 共通プライマリ（composes 不可のため .btn-primary と .restart-btn を同一ルールで共有） */
     .btn-primary,
-    .gameover-overlay .restart-btn {
+    .restart-btn {
       background: linear-gradient(135deg, #00c6ff, #7b2ff7);
       color: white;
       border: none;
@@ -241,9 +305,23 @@
       font-weight: 700;
     }
 
-    /* 盤面オーバーレイ内は横幅いっぱい */
+    /* 盤面オーバーレイ内の「最初から」は横幅いっぱい */
     .gameover-overlay .restart-btn {
       width: 100%;
+    }
+
+    /* ゲームオーバーボタン：押下フィードバック・モバイルタップ最適化 */
+    .gameover-overlay .gameover-btn {
+      transition: all 0.15s ease;
+      transform: scale(1);
+      box-shadow: 0 0 20px rgba(123, 47, 247, 0.4);
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    .gameover-overlay .gameover-btn:active {
+      transform: scale(0.95);
+      box-shadow: 0 0 8px rgba(123, 47, 247, 0.2);
     }
 
     /* ===== スマホレイアウト（1カラム縦並び） ===== */
@@ -423,18 +501,8 @@
       }
 
       .pause-overlay {
-        position: absolute;
         inset: 6px;
-        display: none;
-        align-items: center;
-        justify-content: center;
-        background: rgba(0, 0, 0, 0.9);
         border-radius: 12px;
-        z-index: 5;
-      }
-
-      .pause-overlay.is-active {
-        display: flex;
       }
 
       .end-btn {
@@ -475,13 +543,23 @@
           <section class="board-wrapper">
             <canvas id="board"></canvas>
             <div class="pause-overlay" id="pauseOverlay" aria-hidden="true">
-              <button type="button" class="btn end-btn" id="endBtn">ゲームを終了する</button>
+              <div class="pause-overlay-inner">
+                <h2 class="pause-title">一時停止</h2>
+                <ul class="pause-help" aria-label="モバイル操作">
+                  <li>タップ：回転</li>
+                  <li>左ドラッグ：左移動</li>
+                  <li>右ドラッグ：右移動</li>
+                  <li>下スワイプ：ハードドロップ</li>
+                </ul>
+                <p class="pause-help-note">キーボードの矢印・スペースでも操作できます。</p>
+                <button type="button" class="btn end-btn" id="endBtn">ゲームを終了する</button>
+              </div>
             </div>
             <div class="gameover-overlay" id="gameoverOverlay" aria-hidden="true">
               <h2 class="gameover-title">ゲームオーバー</h2>
               <div class="gameover-buttons">
-                <button type="button" class="restart-btn" id="gameoverRestartBtn">最初から</button>
-                <button type="button" class="exit-btn" id="gameoverExitBtn">ゲームを終了する</button>
+                <button type="button" class="btn-primary restart-btn gameover-btn" id="gameoverRestartBtn">最初から</button>
+                <button type="button" class="exit-btn gameover-btn" id="gameoverExitBtn">ゲームを終了する</button>
               </div>
             </div>
           </section>
@@ -790,6 +868,11 @@
       }
 
       function showGameOverOverlay() {
+        // ゲームオーバーとポーズ用オーバーレイを混在させない
+        pauseOverlay.classList.remove('is-active');
+        pauseOverlay.setAttribute('aria-hidden', 'true');
+        paused = false;
+        startBtn.textContent = 'ポーズ';
         gameoverOverlay.classList.add('is-active');
         gameoverOverlay.setAttribute('aria-hidden', 'false');
       }
