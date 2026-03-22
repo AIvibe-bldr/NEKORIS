@@ -75,6 +75,7 @@
 
     /* ===== ゲーム盤面 ===== */
     .board-wrapper {
+      position: relative; /* 盤面内オーバーレイの基準 */
       flex: 0 0 360px;
       max-width: 360px;
       border-radius: 18px;
@@ -85,6 +86,71 @@
         inset 0 0 20px rgba(0, 0, 0, 0.7);
       /* iOS Safari のダブルタップズーム抑止の補助（子の canvas と併用） */
       touch-action: manipulation;
+    }
+
+    /* ゲームオーバー（canvas#board 領域のみ覆う） */
+    .gameover-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      background: rgba(0, 0, 0, 0.85);
+      border-radius: 14px;
+      z-index: 15;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .gameover-overlay.is-active {
+      display: flex;
+    }
+
+    .gameover-title {
+      margin: 0;
+      font-size: clamp(1.1rem, 4vw, 1.75rem);
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: #ff6b6b;
+      text-shadow: 0 0 12px rgba(255, 80, 80, 0.6);
+    }
+
+    .gameover-overlay .gameover-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: min(260px, 100%);
+    }
+
+    .gameover-overlay .restart-btn {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: none;
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+      background: linear-gradient(135deg, #00bcd4, #009688);
+      box-shadow: 0 0 14px rgba(0, 188, 212, 0.5);
+    }
+
+    .gameover-overlay .exit-btn {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: none;
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+      background: linear-gradient(135deg, #ff5252, #7b2ff7);
+      box-shadow: 0 0 14px rgba(255, 82, 82, 0.45);
+    }
+
+    .gameover-overlay .restart-btn:active,
+    .gameover-overlay .exit-btn:active {
+      transform: translateY(1px);
     }
 
     /* 盤面キャンバス（内部ロジック上は 10x20 想定） */
@@ -402,6 +468,13 @@
             <div class="pause-overlay" id="pauseOverlay" aria-hidden="true">
               <button type="button" class="btn end-btn" id="endBtn">ゲームを終了する</button>
             </div>
+            <div class="gameover-overlay" id="gameoverOverlay" aria-hidden="true">
+              <h2 class="gameover-title">ゲームオーバー</h2>
+              <div class="gameover-buttons">
+                <button type="button" class="restart-btn" id="gameoverRestartBtn">最初から</button>
+                <button type="button" class="exit-btn" id="gameoverExitBtn">ゲームを終了する</button>
+              </div>
+            </div>
           </section>
 
           <!-- 右：HUD（next + start/pause） -->
@@ -435,8 +508,11 @@
       const pauseBtn    = document.getElementById('pauseBtn');
       const pauseOverlay = document.getElementById('pauseOverlay');
       const endBtn = document.getElementById('endBtn');
+      const gameoverOverlay = document.getElementById('gameoverOverlay');
+      const gameoverRestartBtn = document.getElementById('gameoverRestartBtn');
+      const gameoverExitBtn = document.getElementById('gameoverExitBtn');
 
-      if (!boardCanvas || !nextCanvas || !scoreEl || !levelEl || !linesEl || !startBtn || !pauseBtn || !pauseOverlay || !endBtn) {
+      if (!boardCanvas || !nextCanvas || !scoreEl || !levelEl || !linesEl || !startBtn || !pauseBtn || !pauseOverlay || !endBtn || !gameoverOverlay || !gameoverRestartBtn || !gameoverExitBtn) {
         console.error('必要な要素が見つかりません');
         return;
       }
@@ -678,8 +754,7 @@
         nextPiece = createPiece(randomPieceType());
         if (collide(board, current)) {
           gameOver = true;
-          cancelAnimationFrame(animationId);
-          alert('ゲームオーバー');
+          showGameOverOverlay();
         }
         drawNext();
       }
@@ -697,7 +772,42 @@
         spawnPiece();
       }
 
+      function showGameOverOverlay() {
+        gameoverOverlay.classList.add('is-active');
+        gameoverOverlay.setAttribute('aria-hidden', 'false');
+      }
+
+      function hideGameOverOverlay() {
+        gameoverOverlay.classList.remove('is-active');
+        gameoverOverlay.setAttribute('aria-hidden', 'true');
+      }
+
+      /** サイト初回表示と同じ「初期画面」へ（リロードなし） */
+      function resetToInitialScreen() {
+        if (animationId) cancelAnimationFrame(animationId);
+        animationId = null;
+        started = false;
+        paused = false;
+        gameOver = false;
+        board = createEmptyBoard();
+        current = null;
+        nextPiece = null;
+        score = 0;
+        level = 1;
+        lines = 0;
+        dropInterval = 1000;
+        updateUI();
+        nctx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
+        drawBoard();
+        drawNext();
+        pauseOverlay.classList.remove('is-active');
+        pauseOverlay.setAttribute('aria-hidden', 'true');
+        hideGameOverOverlay();
+        startBtn.textContent = 'スタート';
+      }
+
       function startGame() {
+        hideGameOverOverlay();
         board = createEmptyBoard();
         score = 0;
         level = 1;
@@ -748,7 +858,10 @@
           }
         }
         drawBoard();
-        animationId = requestAnimationFrame(loop);
+        // lockPiece → spawn で gameOver になったフレームではループを再登録しない（完全停止）
+        if (!paused && !gameOver) {
+          animationId = requestAnimationFrame(loop);
+        }
       }
 
       // キー操作
@@ -943,22 +1056,17 @@
 
       // 終了ボタン（ポーズ時オーバーレイ上）
       endBtn.addEventListener('click', () => {
-        if (animationId) cancelAnimationFrame(animationId);
-        started = false;
-        paused = false;
-        gameOver = false;
-        board = createEmptyBoard();
-        current = null;
-        nextPiece = null;
-        score = 0;
-        level = 1;
-        lines = 0;
-        updateUI();
-        nctx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
-        drawBoard();
-        pauseOverlay.classList.remove('is-active');
-        pauseOverlay.setAttribute('aria-hidden', 'true');
-        startBtn.textContent = 'スタート';
+        resetToInitialScreen();
+      });
+
+      // ゲームオーバー盤面オーバーレイ
+      gameoverRestartBtn.addEventListener('click', () => {
+        if (!gameOver) return;
+        startGame();
+      });
+
+      gameoverExitBtn.addEventListener('click', () => {
+        resetToInitialScreen();
       });
 
       // 初期状態
@@ -972,6 +1080,7 @@
       startBtn.textContent = 'スタート';
       pauseOverlay.classList.remove('is-active');
       pauseOverlay.setAttribute('aria-hidden', 'true');
+      hideGameOverOverlay();
       drawBoard();
       drawNext();
       updateUI();
