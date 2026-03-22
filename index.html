@@ -124,17 +124,7 @@
       width: min(260px, 100%);
     }
 
-    .gameover-overlay .restart-btn {
-      width: 100%;
-      padding: 10px 14px;
-      border-radius: 999px;
-      border: none;
-      color: #fff;
-      font-weight: 700;
-      cursor: pointer;
-      background: linear-gradient(135deg, #00bcd4, #009688);
-      box-shadow: 0 0 14px rgba(0, 188, 212, 0.5);
-    }
+    /* 「最初から」は .btn-primary と同一見た目（下の .btn-primary 定義で共有） */
 
     .gameover-overlay .exit-btn {
       width: 100%;
@@ -235,6 +225,25 @@
     .btn:active {
       transform: translateY(1px);
       box-shadow: 0 0 10px rgba(0, 188, 212, 0.4);
+    }
+
+    /* 共通プライマリボタン（CSS Modules の composes は使えないため .restart-btn とセレクタで共有） */
+    .btn-primary,
+    .gameover-overlay .restart-btn {
+      background: linear-gradient(135deg, #00c6ff, #7b2ff7);
+      color: white;
+      border: none;
+      border-radius: 14px;
+      padding: 14px 20px;
+      font-size: 16px;
+      box-shadow: 0 0 20px rgba(123, 47, 247, 0.5);
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    /* 盤面オーバーレイ内は横幅いっぱい */
+    .gameover-overlay .restart-btn {
+      width: 100%;
     }
 
     /* ===== スマホレイアウト（1カラム縦並び） ===== */
@@ -657,7 +666,12 @@
         }
         if (cleared > 0) {
           lines += cleared;
-          score += [0, 100, 300, 500, 800][cleared] * level;
+          // 1〜3行は従来どおり（レベル倍率）、4行同時（テトリス）のみ 1000 点固定
+          if (cleared === 4) {
+            score += 1000;
+          } else {
+            score += [0, 100, 300, 500, 800][cleared] * level;
+          }
           level = Math.floor(lines / 10) + 1;
           dropInterval = Math.max(120, 1000 - (level - 1) * 80);
           updateUI();
@@ -763,6 +777,9 @@
         while (!collide(board, { ...current, y: current.y + 1 })) {
           current.y++;
         }
+        // ハードドロップ 1 回につき固定 10 点（落下距離は関係しない）
+        score += 10;
+        updateUI();
         lockPiece();
       }
 
