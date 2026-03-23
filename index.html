@@ -191,20 +191,9 @@
     .gameover-overlay .gameover-buttons {
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      width: min(260px, 100%);
-    }
-
-    .gameover-overlay .exit-btn {
+      align-items: center;
+      gap: 0;
       width: 100%;
-      padding: 10px 14px;
-      border-radius: 999px;
-      border: none;
-      color: #fff;
-      font-weight: 700;
-      cursor: pointer;
-      background: linear-gradient(135deg, #ff5252, #7b2ff7);
-      box-shadow: 0 0 14px rgba(255, 82, 82, 0.45);
     }
 
     /* 盤面キャンバス（内部ロジック上は 10x20 想定） */
@@ -291,32 +280,33 @@
       box-shadow: 0 0 10px rgba(0, 188, 212, 0.4);
     }
 
-    /* 共通プライマリ（composes 不可のため .btn-primary と .restart-btn を同一ルールで共有） */
-    .btn-primary,
-    .restart-btn {
-      background: linear-gradient(135deg, #00c6ff, #7b2ff7);
+    /* ゲームオーバー共通ボタン（本体）＋種別で背景のみ分岐 */
+    .gameover-overlay .gameover-btn {
+      width: 80%;
+      max-width: 320px;
+      padding: 16px 0;
+      border-radius: 999px;
+      font-size: 18px;
+      font-weight: bold;
+      text-align: center;
       color: white;
       border: none;
-      border-radius: 14px;
-      padding: 14px 20px;
-      font-size: 16px;
-      box-shadow: 0 0 20px rgba(123, 47, 247, 0.5);
+      display: block;
+      margin: 12px auto;
+      box-shadow: 0 0 20px rgba(123, 47, 247, 0.4);
       cursor: pointer;
-      font-weight: 700;
-    }
-
-    /* 盤面オーバーレイ内の「最初から」は横幅いっぱい */
-    .gameover-overlay .restart-btn {
-      width: 100%;
-    }
-
-    /* ゲームオーバーボタン：押下フィードバック・モバイルタップ最適化 */
-    .gameover-overlay .gameover-btn {
       transition: all 0.15s ease;
       transform: scale(1);
-      box-shadow: 0 0 20px rgba(123, 47, 247, 0.4);
       -webkit-tap-highlight-color: transparent;
       touch-action: manipulation;
+    }
+
+    .gameover-overlay .restart-btn {
+      background: linear-gradient(135deg, #00c6ff, #7b2ff7);
+    }
+
+    .gameover-overlay .exit-btn {
+      background: linear-gradient(135deg, #ff4b2b, #ff416c);
     }
 
     .gameover-overlay .gameover-btn:active {
@@ -558,8 +548,8 @@
             <div class="gameover-overlay" id="gameoverOverlay" aria-hidden="true">
               <h2 class="gameover-title">ゲームオーバー</h2>
               <div class="gameover-buttons">
-                <button type="button" class="btn-primary restart-btn gameover-btn" id="gameoverRestartBtn">最初から</button>
-                <button type="button" class="exit-btn gameover-btn" id="gameoverExitBtn">ゲームを終了する</button>
+                <button type="button" class="gameover-btn restart-btn" id="gameoverRestartBtn">最初から</button>
+                <button type="button" class="gameover-btn exit-btn" id="gameoverExitBtn">ゲームを終了する</button>
               </div>
             </div>
           </section>
