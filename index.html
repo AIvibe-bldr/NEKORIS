@@ -696,6 +696,35 @@
         return result;
       }
 
+      // ウォールキック：回転後に試す x 方向オフセット（順に優先）
+      const ROTATION_KICK_OFFSETS = [0, -1, 1, -2, 2];
+
+      /**
+       * 時計回り回転を試し、衝突時は位置補正して再試行する。
+       * @returns {boolean} いずれかの位置で回転できたら true
+       */
+      function tryRotateWithWallKick() {
+        if (!current) return false;
+        const rotatedShape = rotate(current.shape);
+        const baseX = current.x;
+        const baseY = current.y;
+
+        for (const dx of ROTATION_KICK_OFFSETS) {
+          const candidate = {
+            ...current,
+            x: baseX + dx,
+            y: baseY,
+            shape: rotatedShape,
+          };
+          if (!collide(board, candidate)) {
+            current.x = baseX + dx;
+            current.shape = rotatedShape;
+            return true;
+          }
+        }
+        return false;
+      }
+
       function collide(b, piece) {
         const { shape, x: px, y: py } = piece;
         for (let y = 0; y < shape.length; y++) {
@@ -979,12 +1008,9 @@
             break;
           case 'ArrowUp':
           case 'x':
-          case 'X': {
-            const rotatedShape = rotate(current.shape);
-            moved = { ...current, shape: rotatedShape };
-            if (!collide(board, moved)) current.shape = rotatedShape;
+          case 'X':
+            tryRotateWithWallKick();
             break;
-          }
           case ' ':
             hardDrop();
             break;
@@ -1107,11 +1133,9 @@
           touchApplyHorizontalSteps(t.clientX);
         }
 
-        // タップ：移動量が小さい → 回転
+        // タップ：移動量が小さい → 回転（キーボードと同じウォールキック）
         if (adx < TOUCH_TAP_MAX && ady < TOUCH_TAP_MAX) {
-          const rotatedShape = rotate(current.shape);
-          const moved = { ...current, shape: rotatedShape };
-          if (!collide(board, moved)) current.shape = rotatedShape;
+          tryRotateWithWallKick();
           drawBoard();
           return;
         }
