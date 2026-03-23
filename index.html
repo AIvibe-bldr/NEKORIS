@@ -280,7 +280,7 @@
       box-shadow: 0 0 10px rgba(0, 188, 212, 0.4);
     }
 
-    /* ゲームオーバー共通ボタン（本体）＋種別で背景のみ分岐 */
+    /* ゲームオーバー共通ボタン（レイアウト・タイポ）＋種別で背景のみ分岐 */
     .gameover-overlay .gameover-btn {
       width: 80%;
       max-width: 320px;
@@ -293,12 +293,13 @@
       border: none;
       display: block;
       margin: 12px auto;
-      box-shadow: 0 0 20px rgba(123, 47, 247, 0.4);
       cursor: pointer;
-      transition: all 0.15s ease;
-      transform: scale(1);
       -webkit-tap-highlight-color: transparent;
       touch-action: manipulation;
+      transition: all 0.15s ease;
+      /* 通常状態 */
+      transform: scale(1);
+      box-shadow: 0 0 20px rgba(123, 47, 247, 0.4);
     }
 
     .gameover-overlay .restart-btn {
@@ -309,6 +310,7 @@
       background: linear-gradient(135deg, #ff4b2b, #ff416c);
     }
 
+    /* 押した瞬間 */
     .gameover-overlay .gameover-btn:active {
       transform: scale(0.95);
       box-shadow: 0 0 8px rgba(123, 47, 247, 0.2);
