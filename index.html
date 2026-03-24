@@ -4,7 +4,13 @@
   <meta charset="UTF-8">
   <!-- スマホ対応 viewport（ゲーム用：ピンチ・ダブルタップ等のズームを抑止しやすくする） -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <title>テトリス</title>
+  <meta name="theme-color" content="#0a1230">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ネコリス">
+  <title>ネコリステトリス</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
 
   <style>
     /* ===== リセット ===== */
@@ -1206,6 +1212,14 @@
       drawNext();
       updateUI();
     });
+  </script>
+  <script>
+    // PWA: Service Worker（file:// では未対応。localhost または HTTPS でホーム画面追加・オフラインが有効）
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+      });
+    }
   </script>
 </body>
 </html>
