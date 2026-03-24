@@ -12,6 +12,25 @@
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
 
+  <!-- PWA / iOS：実表示高さを CSS 変数に反映（ゲームロジックとは無関係） -->
+  <script>
+    (function () {
+      function setAppVisualHeight() {
+        var h = window.innerHeight;
+        if (window.visualViewport && typeof window.visualViewport.height === 'number') {
+          h = window.visualViewport.height;
+        }
+        document.documentElement.style.setProperty('--app-visual-height', h + 'px');
+      }
+      setAppVisualHeight();
+      window.addEventListener('resize', setAppVisualHeight);
+      window.addEventListener('orientationchange', setAppVisualHeight);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', setAppVisualHeight);
+      }
+    })();
+  </script>
+
   <style>
     /* ===== リセット ===== */
     * {
@@ -20,8 +39,16 @@
       box-sizing: border-box;
     }
 
+    html {
+      height: 100%;
+    }
+
     body {
       min-height: 100vh;
+      min-height: 100dvh;
+      min-height: -webkit-fill-available;
+      /* innerHeight / visualViewport を head 内スクリプトが --app-visual-height に設定 */
+      min-height: var(--app-visual-height, 100dvh);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Meiryo", sans-serif;
       background:
         radial-gradient(circle at top, #1d2755 0, #050818 55%, #02030a 100%);
@@ -30,10 +57,15 @@
       justify-content: center;
       align-items: center;
       overflow-x: hidden;        /* 横スクロール禁止 */
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      padding-left: env(safe-area-inset-left, 0px);
+      padding-right: env(safe-area-inset-right, 0px);
     }
 
     /* ===== 共通レイアウト（PC 基準）===== */
 
+    /* ゲーム全体ラッパー（body の flex 中央寄せの子） */
     .app-shell {
       width: 100%;
       max-width: 1200px;
@@ -325,12 +357,18 @@
     /* ===== スマホレイアウト（1カラム縦並び） ===== */
     @media (max-width: 768px) {
       body {
-        align-items: flex-start;
-        padding: 16px 0;
+        align-items: center;
+        justify-content: center;
+        /* safe-area に最低限の余白を足す（PWA standalone と Safari 両対応） */
+        padding-top: max(10px, env(safe-area-inset-top, 0px));
+        padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+        padding-left: max(8px, env(safe-area-inset-left, 0px));
+        padding-right: max(8px, env(safe-area-inset-right, 0px));
       }
 
       .app-shell {
-        padding: 12px 8px 24px;
+        padding: 12px 8px;
+        margin: 0 auto;
       }
 
       /* 装飾パネルは非表示（ゲーム盤面優先） */
