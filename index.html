@@ -750,9 +750,62 @@
         return list;
       }
 
+      /** I 字の占有マスの列範囲（右端／左端アンカー判定用） */
+      function getOccupiedXBounds(piece) {
+        let minX = COLS;
+        let maxX = -1;
+        const { shape, x: px } = piece;
+        for (let y = 0; y < shape.length; y++) {
+          for (let x = 0; x < shape[y].length; x++) {
+            if (!shape[y][x]) continue;
+            const ox = px + x;
+            minX = Math.min(minX, ox);
+            maxX = Math.max(maxX, ox);
+          }
+        }
+        return { minX, maxX };
+      }
+
+      /**
+       * I 字専用：壁際では「回転後の左上角 x（baseX+dx）」で候補順を並べ替え、壁側アンカーを優先する。
+       * - 右端付近: pivotX が大きい候補を先に試す（右を維持しやすい）
+       * - 左端付近: pivotX が小さい候補を先に試す
+       * - 中央付近: buildIKickOrderedList の順のまま（SRS→フォールバック）
+       */
+      function prioritizeIKicksForWallAnchor(kicks, baseX, occMinX, occMaxX) {
+        const nearRight = occMaxX >= COLS - 3;
+        const nearLeft = occMinX <= 2;
+        if (!nearRight && !nearLeft) {
+          return kicks;
+        }
+        const decorated = kicks.map((pair, index) => ({
+          pair,
+          index,
+          pivotX: baseX + pair[0]
+        }));
+        if (nearRight && !nearLeft) {
+          decorated.sort((a, b) => {
+            if (b.pivotX !== a.pivotX) return b.pivotX - a.pivotX;
+            return a.index - b.index;
+          });
+        } else if (nearLeft && !nearRight) {
+          decorated.sort((a, b) => {
+            if (a.pivotX !== b.pivotX) return a.pivotX - b.pivotX;
+            return a.index - b.index;
+          });
+        } else {
+          // 両端に近い幅では右寄りと左寄りが競合しにくいが、右端優先で一本化
+          decorated.sort((a, b) => {
+            if (b.pivotX !== a.pivotX) return b.pivotX - a.pivotX;
+            return a.index - b.index;
+          });
+        }
+        return decorated.map((d) => d.pair);
+      }
+
       /**
        * 時計回り回転を試し、衝突時は位置補正して再試行する。
-       * I 字は SRS → 広いフォールバックの順、それ以外は横方向の簡易キック。
+       * I 字は SRS＋フォールバックを、壁際では右／左アンカー優先順で試す。それ以外は横方向の簡易キック。
        * @returns {boolean} いずれかの位置で回転できたら true
        */
       function tryRotateWithWallKick() {
@@ -766,7 +819,13 @@
           if (typeof fromR !== 'number' || fromR < 0 || fromR > 3) {
             fromR = 0;
           }
-          const kicks = buildIKickOrderedList(fromR);
+          const { minX: occMinX, maxX: occMaxX } = getOccupiedXBounds(current);
+          const kicks = prioritizeIKicksForWallAnchor(
+            buildIKickOrderedList(fromR),
+            baseX,
+            occMinX,
+            occMaxX
+          );
           for (let i = 0; i < kicks.length; i++) {
             const [dx, dy] = kicks[i];
             const candidate = {
