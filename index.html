@@ -711,9 +711,8 @@
       const ROTATION_KICK_OFFSETS_NORMAL = [0, -1, 1, -2, 2];
 
       /**
-       * I 字時計回り用 SRS キックテーブル（Tetris Guideline 準拠）
-       * インデックス = 回転前の rotation（0→R, R→2, 2→L, L→0）
-       * 各要素は [dx, dy]（y は下方向が正）
+       * I 字時計回り用 SRS キックテーブル（Guideline 準拠・優先試行）
+       * 行列回転の基準が厳密に SRS と一致しない場合があるため、後段で広いフォールバックを続ける。
        */
       const I_KICKS_CW = [
         [[0, 0], [-2, 0], [1, 0], [-2, -1], [1, 2]],
@@ -722,9 +721,38 @@
         [[0, 0], [1, 0], [-2, 0], [1, -2], [-2, 1]]
       ];
 
+      // I 字フォールバック：横を広く（右端回転不能を防ぐ）。±4 まで 10 列盤用の保険
+      const I_KICK_FALLBACK_DX = [0, -1, 1, -2, 2, -3, 3, -4, 4];
+
+      /**
+       * I 字のキック試行順：①SRS（自然な2回転を優先）②広い横オフセット ③軽い縦＋横
+       */
+      function buildIKickOrderedList(fromR) {
+        const seen = new Set();
+        const list = [];
+        const add = (dx, dy) => {
+          const key = dx + ',' + dy;
+          if (seen.has(key)) return;
+          seen.add(key);
+          list.push([dx, dy]);
+        };
+        for (const pair of I_KICKS_CW[fromR]) {
+          add(pair[0], pair[1]);
+        }
+        for (const dx of I_KICK_FALLBACK_DX) {
+          add(dx, 0);
+        }
+        for (const dy of [-1, 1]) {
+          for (const dx of I_KICK_FALLBACK_DX) {
+            add(dx, dy);
+          }
+        }
+        return list;
+      }
+
       /**
        * 時計回り回転を試し、衝突時は位置補正して再試行する。
-       * I 字のみ rotation 状態に応じた SRS キックテーブル、それ以外は横方向の簡易キック。
+       * I 字は SRS → 広いフォールバックの順、それ以外は横方向の簡易キック。
        * @returns {boolean} いずれかの位置で回転できたら true
        */
       function tryRotateWithWallKick() {
@@ -738,7 +766,7 @@
           if (typeof fromR !== 'number' || fromR < 0 || fromR > 3) {
             fromR = 0;
           }
-          const kicks = I_KICKS_CW[fromR];
+          const kicks = buildIKickOrderedList(fromR);
           for (let i = 0; i < kicks.length; i++) {
             const [dx, dy] = kicks[i];
             const candidate = {
