@@ -696,11 +696,14 @@
         return result;
       }
 
-      // ウォールキック：回転後に試す x 方向オフセット（順に優先）
-      const ROTATION_KICK_OFFSETS = [0, -1, 1, -2, 2];
+      // ウォールキック：通常ブロック用（I 字より補正幅を狭く）
+      const ROTATION_KICK_OFFSETS_NORMAL = [0, -1, 1, -2, 2];
+      // I 字専用：縦横切替で端からはみ出すため ±3 まで試す
+      const ROTATION_KICK_OFFSETS_I = [0, -1, 1, -2, 2, -3, 3];
 
       /**
        * 時計回り回転を試し、衝突時は位置補正して再試行する。
+       * I 字は専用の kick 候補、それ以外は通常候補を使う。
        * @returns {boolean} いずれかの位置で回転できたら true
        */
       function tryRotateWithWallKick() {
@@ -708,8 +711,10 @@
         const rotatedShape = rotate(current.shape);
         const baseX = current.x;
         const baseY = current.y;
+        const isI = current.type === 'I';
+        const kickOffsets = isI ? ROTATION_KICK_OFFSETS_I : ROTATION_KICK_OFFSETS_NORMAL;
 
-        for (const dx of ROTATION_KICK_OFFSETS) {
+        for (const dx of kickOffsets) {
           const candidate = {
             ...current,
             x: baseX + dx,
