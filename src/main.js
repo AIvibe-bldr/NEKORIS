@@ -13,7 +13,9 @@ const rand = (a, b) => a + Math.random() * (b - a);
 // ───────────── 描画 ─────────────
 const canvas = $('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+const coarse = matchMedia('(pointer: coarse)').matches;
+let pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+renderer.setPixelRatio(pixelRatio);
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.95;
 const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0c0a08);
@@ -24,7 +26,7 @@ const camera = new THREE.PerspectiveCamera(62, 1, 0.05, 60);
 scene.add(new THREE.HemisphereLight(0xfff3e0, 0x7a6450, 0.42));
 const sun = new THREE.DirectionalLight(0xfff0dc, 1.5);
 sun.position.set(2.5, 18, 3.5); sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.setScalar(coarse ? 1536 : 2048);
 Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 12, bottom: -12, near: 1, far: 30 });
 sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.015;
 scene.add(sun, sun.target);
@@ -34,9 +36,20 @@ const navDog = new NavGrid(0.28, 0.55), navMan = new NavGrid(0.3, 1.7);
 
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
-  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+  renderer.setSize(w, h, false); camera.aspect = w / h;
+  camera.fov = w < h ? 80 : 62;                       // 縦持ちでは上下を広く写す
+  camera.updateProjectionMatrix();
 }
-window.addEventListener('resize', resize); resize();
+window.addEventListener('resize', resize); window.addEventListener('orientationchange', () => setTimeout(resize, 300)); resize();
+
+// 端末が重いときは解像度を自動で下げる
+let perfT = 0, perfN = 0;
+function adaptQuality(rawDt) {
+  perfT += rawDt; perfN++;
+  if (perfN < 90) return;
+  const avg = perfT / perfN; perfT = perfN = 0;
+  if (avg > 0.024 && pixelRatio > 0.75) { pixelRatio = Math.max(0.75, pixelRatio - 0.25); renderer.setPixelRatio(pixelRatio); resize(); }
+}
 
 // ───────────── 音 ─────────────
 let ac = null;
@@ -110,9 +123,15 @@ canvas.addEventListener('pointerup', pUp); canvas.addEventListener('pointercance
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 let touchDash = false;
 const hold = (el, down, up) => {
-  el.addEventListener('pointerdown', (e) => { e.preventDefault(); el.setPointerCapture(e.pointerId); el.classList.add('on'); down(); });
+  let px = 0, py = 0;
+  el.addEventListener('pointerdown', (e) => { e.preventDefault(); el.setPointerCapture(e.pointerId); el.classList.add('on'); px = e.clientX; py = e.clientY; down(); });
+  el.addEventListener('pointermove', (e) => {      // ボタンを押したまま指をずらすと視点が回る
+    if (!el.classList.contains('on')) return;
+    camYaw -= (e.clientX - px) * 0.007; camPitch = Math.max(0.08, Math.min(1.15, camPitch + (e.clientY - py) * 0.005));
+    px = e.clientX; py = e.clientY; input.camDragT = 0;
+  });
   const u = () => { el.classList.remove('on'); up && up(); };
-  el.addEventListener('pointerup', u); el.addEventListener('pointercancel', u);
+  el.addEventListener('pointerup', u); el.addEventListener('pointercancel', u); el.addEventListener('contextmenu', (e) => e.preventDefault());
 };
 hold($('bJump'), () => { input.jumpBuf = 0.15; });
 hold($('bDash'), () => { touchDash = true; }, () => { touchDash = false; });
@@ -381,7 +400,7 @@ function updateVacuum(v, dt) {
 
 // ───────────── ルール ─────────────
 function loseLife(who) {
-  game.lives--; sfx.hiss();
+  game.lives--; sfx.hiss(); if (navigator.vibrate) navigator.vibrate(120);
   const f = $('flash'); f.classList.add('on'); requestAnimationFrame(() => requestAnimationFrame(() => f.classList.remove('on')));
   if (game.lives <= 0) {
     game.state = 'over'; sfx.over();
@@ -418,7 +437,7 @@ function step(dt) {
 const HELP = `<p>おうちの中でネズミをぜんぶつかまえよう。<br>イヌと人に見つかったら、すばやく逃げて！</p><ul>
 <li>🕹️ 移動：${isTouch ? '画面左をドラッグ' : '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / 矢印キー'}</li>
 <li>⤴️ ジャンプ：${isTouch ? 'ジャンプボタン' : '<kbd>Space</kbd>'}　💨 ダッシュ：${isTouch ? 'ダッシュボタン長押し' : '<kbd>Shift</kbd>'}</li>
-<li>🎥 視点：${isTouch ? '画面右をドラッグ' : 'マウスドラッグ / <kbd>Q</kbd><kbd>E</kbd>'}</li>
+<li>🎥 視点：${isTouch ? '画面右をドラッグ（ダッシュ中はボタンから指をずらす）' : 'マウスドラッグ / <kbd>Q</kbd><kbd>E</kbd>'}</li>
 <li>🐕 イヌはテーブルや棚の上までは届かない。あきらめるまで待とう</li>
 <li>🧍 人は手が届くので、高い所でも油断しないで</li>
 <li>🐭 ベッドやソファの下に逃げ込んだネズミは、出てくるまで手が出せない</li></ul>`;
@@ -434,8 +453,10 @@ document.addEventListener('visibilitychange', () => { last = performance.now(); 
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.033, Math.max(0.001, (now - last) / 1000)); last = now;
+  const raw = (now - last) / 1000, dt = Math.min(0.033, Math.max(0.001, raw)); last = now;
   if (document.hidden) return;
+  if (raw < 0.25) adaptQuality(raw);
+  document.body.classList.toggle('playing', game.state === 'play');
   if (game.state === 'play') { readInput(dt); step(dt); updateCamera(dt, false); }
   else {
     if (game.state === 'title') { cat.model.group.position.set(cat.x, cat.y, cat.z); cat.model.group.rotation.y = cat.yaw; animateQuad(cat.model, dt, 0); }
@@ -447,3 +468,5 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 window.__game = { camera, game, cat, input, keys, step, startLevel, navDog, navMan, boxes, setCam: (y, p) => { camYaw = y; if (p != null) camPitch = p; input.camDragT = 0; } };
+
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./service-worker.js').catch(() => {});
