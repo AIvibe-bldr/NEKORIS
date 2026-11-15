@@ -1,6 +1,7 @@
 // キャラクターのモデルとアニメーション（ネコ・イヌ・ネズミ・人・ロボット掃除機）
 import * as THREE from '../vendor/three.module.min.js';
 import { rng } from './world.js';
+import { clone as cloneSkinned } from '../vendor/SkeletonUtils.js';
 
 const std = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.95, ...o });
 const SPH = new THREE.SphereGeometry(1, 24, 16);
@@ -313,4 +314,113 @@ export function buildMouseFrom(proto) {
   m.scale.setScalar(1.9); m.position.z = 0.065; body.add(m);
   m.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   return { group: g, body, tail: [], t: Math.random() * 10 };
+}
+
+// ───────────── 骨格アニメーション付きのリアルなモデル（ネコ・イヌ・人） ─────────────
+const protos = {};
+const _box = new THREE.Box3(), _v = new THREE.Vector3(), _c = new THREE.Vector3();
+
+/** モデルを歩行ポーズで測り、足元を原点・指定の高さになるよう正規化する */
+function prep(scene, clips, height, under) {
+  const top = under ? scene.getObjectByName(under) : scene;
+  const mixer = new THREE.AnimationMixer(scene), a = mixer.clipAction(clips.walk);
+  a.play(); mixer.setTime(clips.walk.duration * 0.25); scene.updateMatrixWorld(true);
+  _box.makeEmpty();
+  top.traverse((o) => { if (o.isSkinnedMesh) { o.computeBoundingBox(); _box.union(o.boundingBox.clone().applyMatrix4(o.matrixWorld)); } });
+  mixer.stopAllAction(); mixer.uncacheRoot(scene);
+  _box.getSize(_v); _box.getCenter(_c);
+  const s = height / _v.y;
+  scene.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) { m.emissiveMap = null; if (m.emissive) m.emissive.set(0); m.metalness = 0; m.metalnessMap = null; m.roughness = Math.max(m.roughness, 0.75); } });
+  return { scene, clips, s, off: new THREE.Vector3(-_c.x * s, -_box.min.y * s, -_c.z * s) };
+}
+
+/** 読み込んだモデルを登録する（無ければコード生成の簡易モデルを使う） */
+export function setCharacterModels(m) {
+  try {
+    if (m.cat) protos.cat = prep(m.cat.scene, { walk: m.cat.animations[0] }, 0.31);
+    if (m.dog) {
+      const c = m.dog.animations[0], sub = (n, a, b) => THREE.AnimationUtils.subclip(c, n, Math.round(a * 60), Math.round(b * 60), 60);
+      protos.dog = prep(m.dog.scene, { walk: sub('walk', 9.77, 11.16), idle: sub('idle', 5.75, 7.9), sit: sub('sit', 0.7, 5.1) }, 0.68);
+    }
+    if (m.people) {
+      const sc = m.people.scene, clip = m.people.animations[0], arms = ['Armature_175', 'Armature__94'];
+      protos.people = arms.map((name, i) => {
+        const arm = sc.getObjectByName(name), names = new Set(); arm.traverse((o) => names.add(o.name));
+        const walk = new THREE.AnimationClip('walk' + i, clip.duration, clip.tracks.filter((t) => names.has(t.name.slice(0, t.name.lastIndexOf('.')))));
+        const p = prep(sc, { walk }, i ? 1.63 : 1.76, name); p.hide = arms[1 - i];
+        // 立ち止まるときのポーズ：両足が一番そろう瞬間
+        let L = null, R = null; arm.traverse((o) => { if (o.isBone && /LeftFoot/.test(o.name) && !L) L = o; if (o.isBone && /RightFoot/.test(o.name) && !R) R = o; });
+        const mixer = new THREE.AnimationMixer(sc); mixer.clipAction(walk).play(); let best = 1e9; p.standT = 0;
+        for (let k = 0; k < 30 && L && R; k++) {
+          mixer.setTime((clip.duration * k) / 30); sc.updateMatrixWorld(true);
+          const d = L.getWorldPosition(_v).distanceTo(R.getWorldPosition(_c)); if (d < best) { best = d; p.standT = (clip.duration * k) / 30; }
+        }
+        mixer.stopAllAction(); mixer.uncacheRoot(sc);
+        return p;
+      });
+    }
+  } catch (e) { console.warn('character models unavailable', e); }
+}
+
+function spawn(proto, fur) {
+  const root = cloneSkinned(proto.scene);
+  if (proto.hide) root.getObjectByName(proto.hide).visible = false;
+  let main = null;
+  root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; if (o.isSkinnedMesh && (!main || o.geometry.attributes.position.count > main.geometry.attributes.position.count)) main = o; } });
+  if (fur && main) for (let i = 0; i < fur.layers; i++) {            // 毛の層を骨格つきで重ねる
+    const mat = main.material.clone(), layer = (i + 1) / fur.layers;
+    mat.onBeforeCompile = (sd) => {
+      sd.uniforms.furLen = { value: fur.len / proto.s }; sd.uniforms.furL = { value: layer }; sd.uniforms.furDensity = { value: fur.density * proto.s };
+      sd.vertexShader = 'uniform float furLen; uniform float furL; varying vec3 vFurP;\n' + sd.vertexShader.replace('#include <begin_vertex>',
+        '#include <begin_vertex>\n vFurP = position; transformed += normalize(objectNormal) * furLen * furL;');
+      sd.fragmentShader = 'uniform float furDensity; uniform float furL; varying vec3 vFurP;\n' + sd.fragmentShader.replace('#include <map_fragment>',
+        `#include <map_fragment>
+         vec3 fp = vFurP * furDensity; vec3 fc = floor(fp); vec3 ff = fract(fp) - 0.5;
+         float rnd = fract(sin(dot(fc, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+         float hgt = 0.6 + 0.4 * rnd;
+         if (furL > hgt || length(ff) > 0.86 * (1.0 - 0.72 * furL / hgt)) discard;
+         diffuseColor.rgb *= mix(0.72, 1.12, furL) * (0.9 + 0.2 * rnd);`);
+    };
+    mat.customProgramCacheKey = () => 'fur-skin';
+    const sh = new THREE.SkinnedMesh(main.geometry, mat);
+    sh.position.copy(main.position); sh.quaternion.copy(main.quaternion); sh.scale.copy(main.scale);
+    main.parent.add(sh); sh.bind(main.skeleton, main.bindMatrix);
+    sh.frustumCulled = false; sh.visible = furOn; shells.push(sh);
+  }
+  const inner = new THREE.Group(); inner.scale.setScalar(proto.s); inner.position.copy(proto.off); inner.add(root);
+  const group = new THREE.Group(); group.add(inner);
+  const mixer = new THREE.AnimationMixer(root), acts = {};
+  for (const k in proto.clips) { acts[k] = mixer.clipAction(proto.clips[k]); acts[k].play(); acts[k].setEffectiveWeight(k === 'walk' ? 1 : 0); }
+  return { group, inner, mixer, acts, w: {} };
+}
+const approach = (m, k, target, dt) => { m.w[k] = (m.w[k] ?? 0) + (target - (m.w[k] ?? 0)) * Math.min(1, dt * 8); m.acts[k].setEffectiveWeight(m.w[k]); };
+
+export function makeCat() {
+  if (!protos.cat) { const q = buildCat(); return { group: q.group, update: (dt, sp, o) => animateQuad(q, dt, sp, o) }; }
+  const m = spawn(protos.cat, { len: 0.011, density: 560, layers: 10 }); m.acts.walk.time = 0.2;
+  return { group: m.group, update(dt, sp, o = {}) {
+    // 歩行の動きを速さに合わせて再生。止まっているときはごくゆっくり、空中では脚を伸ばしたまま
+    m.acts.walk.timeScale = o.air ? 0.25 : sp < 0.15 ? 0 : Math.min(4.6, 0.7 + sp * 0.72);
+    m.inner.rotation.x += ((o.air ? Math.max(-0.5, Math.min(0.5, -(o.vy || 0) * 0.07)) : 0) - m.inner.rotation.x) * Math.min(1, dt * 12);
+    m.mixer.update(dt);
+  } };
+}
+export function makeDog(i = 0) {
+  if (!protos.dog) { const q = buildDog(i); return { group: q.group, update: (dt, sp, o) => animateQuad(q, dt, sp, o) }; }
+  const m = spawn(protos.dog, { len: 0.016, density: 380, layers: 8 });
+  return { group: m.group, update(dt, sp, o = {}) {
+    const walk = Math.min(1, sp / 0.5), sit = o.rest ? 1 : 0;
+    approach(m, 'walk', walk, dt); approach(m, 'sit', (1 - walk) * sit, dt); approach(m, 'idle', (1 - walk) * (1 - sit), dt);
+    m.acts.walk.timeScale = Math.min(4.6, 0.6 + sp * 0.95);
+    m.mixer.update(dt);
+  } };
+}
+export function makePerson(i = 0) {
+  if (!protos.people) { const q = buildPerson(i); return { group: q.group, update: (dt, sp, o) => animatePerson(q, dt, sp, o && o.chase) }; }
+  const p = protos.people[i % 2], m = spawn(p, null), a = m.acts.walk, dur = a.getClip().duration; a.time = p.standT;
+  return { group: m.group, update(dt, sp) {
+    if (sp > 0.1) a.timeScale = Math.min(2.4, sp / 1.25);
+    else { const d = ((p.standT - a.time) % dur + dur) % dur; a.timeScale = d < 0.04 || d > dur - 0.04 ? 0 : 1; }   // 足がそろう所まで進めて止まる
+    m.mixer.update(dt);
+  } };
 }

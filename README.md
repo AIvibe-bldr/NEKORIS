@@ -29,9 +29,16 @@ python3 -m http.server 8000   # → http://localhost:8000/
 - 動きが重い端末では解像度を自動で下げます。
 - ダッシュボタンを押したまま指をずらすと、走りながら視点を回せます。
 
-## 素材
+## 素材とクレジット
 
-家具・観葉植物・ネズミの3Dモデル、床と壁のテクスチャ、窓の外の全天球写真は [Poly Haven](https://polyhaven.com/) のCC0素材です（`assets/`）。
+| 対象 | 作品名 / 作者 | ライセンス |
+| --- | --- | --- |
+| ネコ | [cat Walk](https://sketchfab.com/3d-models/fc6e597a81ce4dc291dcca6a9e6888ba) / Erina eka syaharani | CC BY 4.0 |
+| イヌ | [Dog from Lamps](https://sketchfab.com/3d-models/a43ed994cafc43ebae92dad0440c246b) / Flightyfelon | CC BY 4.0 |
+| 人 | [Man Woman Walk](https://sketchfab.com/3d-models/bbaa566445074509a32ef5059a9d0bc2) / Iko Nia | CC BY 4.0 |
+| 家具・観葉植物・ネズミ、床と壁のテクスチャ、窓の外の全天球写真 | [Poly Haven](https://polyhaven.com/) | CC0 |
+
+ネコ・イヌ・人のモデルは Objaverse データセット経由で取得し、大きさ・質感・動きの区間を調整して使っています。
 読み込めなかった素材は、コードで生成した簡易版で表示されます。
 
 ## 構成

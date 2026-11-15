@@ -673,11 +673,12 @@ export function buildWorld(scene) {
 /** 実写の3Dモデル・テクスチャを読み込んで差し替える。失敗したものは簡易版のまま残る */
 export async function loadAssets(scene, onProgress) {
   const L = new GLTFLoader(), TL = new THREE.TextureLoader(), models = {};
-  const ids = [...new Set(slots.map((s) => s.id)), 'street_rat'];
-  let done = 0; const total = ids.length + texJobs.length, tick = () => onProgress(++done / total);
+  const ids = [...new Set(slots.map((s) => s.id)), 'street_rat'], chars = {};
+  let done = 0; const total = ids.length + texJobs.length + 3, tick = () => onProgress(++done / total);
   await Promise.all([
     ...ids.map((id) => L.loadAsync(`assets/glb/${id}.glb`).then((g) => { models[id] = g.scene; }).catch(() => {}).then(tick)),
     ...texJobs.map((j) => TL.loadAsync(j.url).then(j.apply).catch(() => {}).then(tick)),
+    ...['cat', 'dog', 'people'].map((id) => L.loadAsync(`assets/glb/${id}.glb`).then((g) => { chars[id] = g; }).catch(() => {}).then(tick)),
   ]);
   const size = new THREE.Vector3(), bb = new THREE.Box3();
   for (const s of slots) {
@@ -693,5 +694,5 @@ export async function loadAssets(scene, onProgress) {
   const cloth = {};
   await Promise.all([['diff', true], ['nor_gl', false]].map(([k, srgb]) => TL.loadAsync(`assets/textures/denim_fabric/denim_fabric_${k}_1k.jpg`).then((t) => {
     t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 3); if (srgb) t.colorSpace = THREE.SRGBColorSpace; cloth[k] = t; }).catch(() => {})));
-  return { rat: models.street_rat || null, cloth };
+  return { rat: models.street_rat || null, cloth, chars };
 }

@@ -2,7 +2,7 @@
 import * as THREE from '../vendor/three.module.min.js';
 import { RoomEnvironment } from '../vendor/RoomEnvironment.js';
 import { buildWorld, loadAssets, sightClear, boxes, resolveCircle, groundAt, ceilingAt, rayT, los, mouseBlocked, mouseCovered, NavGrid, BOUNDS, WALL_H } from './world.js';
-import { buildCat, buildDog, buildMouse, buildPerson, buildVacuum, animateQuad, animateMouse, animatePerson, makeAlert, makeBlob, setFur, buildMouseFrom, setCloth } from './actors.js';
+import { makeCat, makeDog, makePerson, setCharacterModels, buildMouse, buildVacuum, animateMouse, makeAlert, makeBlob, setFur, buildMouseFrom, setCloth } from './actors.js';
 
 const $ = (id) => document.getElementById(id);
 const TAU = Math.PI * 2;
@@ -157,7 +157,7 @@ function readInput(dt) {
 // ───────────── ゲーム状態 ─────────────
 const CAT_H = 0.28, CAT_R = 0.16, SPAWN = { x: -7.4, z: 2 };
 const game = { state: 'title', level: 1, score: 0, lives: 5, time: 0, mice: [], dogs: [], people: [], vac: null, caught: 0 };
-const cat = { x: SPAWN.x, y: 0, z: SPAWN.z, vx: 0, vy: 0, vz: 0, yaw: Math.PI / 2, onGround: true, coyote: 0, stamina: 1, tired: false, inv: 0, stun: 0, dashing: false, model: buildCat() };
+const cat = { x: SPAWN.x, y: 0, z: SPAWN.z, vx: 0, vy: 0, vz: 0, yaw: Math.PI / 2, onGround: true, coyote: 0, stamina: 1, tired: false, inv: 0, stun: 0, dashing: false, model: makeCat() };
 scene.add(cat.model.group);
 const catBlob = makeBlob(0.3); catBlob.scale.set(0.8, 1.25, 1); scene.add(catBlob);
 
@@ -190,14 +190,14 @@ function startLevel(n) {
   }
   const dogStart = [{ x: 8.9, z: 0.2 }, { x: 7.5, z: 5 }];
   for (let i = 0; i < nd; i++) {
-    const model = buildDog(i), alert = makeAlert(); alert.position.y = 0.95; model.group.add(alert);
+    const model = makeDog(i), alert = makeAlert(); alert.position.y = 0.95; model.group.add(alert);
     const bl = makeBlob(0.55); bl.scale.set(0.8, 1.3, 1); bl.position.y = 0.011; model.group.add(bl);
     game.dogs.push({ ...dogStart[i], yaw: Math.PI, r: 0.2, yLo: 0.15, yHi: 0.55, eye: 0.5, state: 'patrol', path: null, pi: 0, wait: 3 + i * 2, ignore: 0, lost: 0, repath: 0, barkT: 0, giveup: 0, timer: 0, lx: 0, lz: 0, spd: 0, cs: Math.min(5.2, 4.1 + n * 0.15), model, alert });
     scene.add(model.group);
   }
   const manStart = [{ x: 5, z: -1.5 }, { x: -6, z: 5 }, { x: 1.5, z: 5 }];
   for (let i = 0; i < np; i++) {
-    const model = buildPerson(i + n), alert = makeAlert(); alert.position.y = 1.95; alert.scale.setScalar(0.32); model.group.add(alert);
+    const model = makePerson(i + n), alert = makeAlert(); alert.position.y = 1.95; alert.scale.setScalar(0.32); model.group.add(alert);
     const bl = makeBlob(0.42, 0.4); bl.position.y = 0.011; model.group.add(bl);
     game.people.push({ ...manStart[i], yaw: 0, r: 0.2, yLo: 0.15, yHi: 1.7, eye: 1.55, lost: 0, lx: 0, lz: 0, state: 'walk', path: null, pi: 0, wait: 1 + i, cool: 0, timer: 0, repath: 0, spd: 0, cs: Math.min(3.1, 2.5 + n * 0.08), model, alert });
     scene.add(model.group);
@@ -277,7 +277,7 @@ function updateCat(dt) {
   const gy = groundAt(c.x, c.z, 0.06, c.y);
   catBlob.position.set(c.x, gy + 0.012, c.z); catBlob.rotation.z = c.yaw; catBlob.material.opacity = 0.45 * Math.max(0.25, 1 - (c.y - gy) * 0.8);
   g.visible = c.inv <= 0 || Math.floor(c.inv * 12) % 2 === 0;
-  animateQuad(c.model, dt, hs, { run: hs > 4.2, air: !c.onGround, vy: c.vy });
+  c.model.update(dt, hs, { run: hs > 4.2, air: !c.onGround, vy: c.vy });
 }
 
 function updateCamera(dt, title) {
@@ -374,7 +374,7 @@ function updateDog(d, dt) {
     else if (follow(d, navDog, 2.8, dt)) { d.yaw += dt * 2.4; d.timer -= dt; if (d.timer <= 0) { d.state = 'patrol'; d.alert.visible = false; d.path = null; d.wait = 0; } }
   }
   d.model.group.position.set(d.x, 0, d.z); d.model.group.rotation.y = d.yaw;
-  animateQuad(d.model, dt, d.spd, { run: d.spd > 3, wag, alert: d.state !== 'patrol' });
+  d.model.update(dt, d.spd, { run: d.spd > 3, wag, alert: d.state !== 'patrol', rest: d.state === 'patrol' && d.spd < 0.05 });
   return d.state === 'chase' && cat.inv <= 0 && dist < 0.6 && cat.y < 0.6;
 }
 
@@ -393,7 +393,7 @@ function updatePerson(p, dt) {
     else { p.repath -= dt; if (p.repath <= 0) { setPath(p, navMan, p.lx, p.lz); p.repath = 0.35; } follow(p, navMan, p.cs, dt); }
   }
   p.model.group.position.set(p.x, 0, p.z); p.model.group.rotation.y = p.yaw;
-  animatePerson(p.model, dt, p.spd, p.state === 'chase');
+  p.model.update(dt, p.spd, { chase: p.state === 'chase' });
   return p.state === 'chase' && cat.inv <= 0 && dist < 0.48 && cat.y < 1.3;
 }
 
@@ -461,7 +461,10 @@ let ratProto = null;
 {
   const btn = $('oBtn'); btn.disabled = true; btn.textContent = '読み込み中… 0%';
   loadAssets(scene, (p) => { btn.textContent = `読み込み中… ${Math.round(p * 100)}%`; })
-    .then((a) => { ratProto = a.rat; setCloth(a.cloth); }).catch(() => {})
+    .then((a) => {
+      ratProto = a.rat; setCloth(a.cloth); setCharacterModels(a.chars);
+      scene.remove(cat.model.group); cat.model = makeCat(); scene.add(cat.model.group);     // ネコをリアルなモデルに差し替え
+    }).catch(() => {})
     .then(() => { btn.disabled = false; btn.textContent = 'スタート'; window.__ready = true; });
 }
 $('oBtn').addEventListener('click', () => {
@@ -481,7 +484,7 @@ function frame(now) {
   document.body.classList.toggle('playing', game.state === 'play');
   if (game.state === 'play') { readInput(dt); step(dt); updateCamera(dt, false); }
   else {
-    if (game.state === 'title') { cat.model.group.position.set(cat.x, cat.y, cat.z); cat.model.group.rotation.y = cat.yaw; animateQuad(cat.model, dt, 0); }
+    if (game.state === 'title') { cat.model.group.position.set(cat.x, cat.y, cat.z); cat.model.group.rotation.y = cat.yaw; cat.model.update(dt, 0, {}); }
     updateCamera(dt, true);
   }
   updateHud(dt); drawMap();
