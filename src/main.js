@@ -14,6 +14,7 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const canvas = $('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 const coarse = matchMedia('(pointer: coarse)').matches;
+const isTouch = coarse || 'ontouchstart' in window;
 let pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
 renderer.setPixelRatio(pixelRatio);
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -33,14 +34,22 @@ sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.03;
 scene.add(sun, sun.target);
 
 buildWorld(scene);
-const navDog = new NavGrid(0.28, 0.55), navMan = new NavGrid(0.3, 1.7);
+const navDog = new NavGrid(0.34, 0.55), navMan = new NavGrid(0.34, 1.7);
 
+// スマホは常に横画面で遊ぶ。縦に持っているときは画面全体を90度回して表示する
+const app = $('app');
+let rotated = false, VW = 1, VH = 1;
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
-  renderer.setSize(w, h, false); camera.aspect = w / h;
-  camera.fov = w < h ? 80 : 62;                       // 縦持ちでは上下を広く写す
+  rotated = isTouch && h > w; VW = rotated ? h : w; VH = rotated ? w : h;
+  app.style.width = VW + 'px'; app.style.height = VH + 'px';
+  app.style.transform = rotated ? `translateX(${w}px) rotate(90deg)` : '';
+  document.body.classList.toggle('compact', VH < 470);
+  renderer.setSize(VW, VH, false); camera.aspect = VW / VH; camera.fov = 62;
   camera.updateProjectionMatrix();
 }
+/** 画面を回しているときも、タッチ位置をゲーム画面の座標に直す */
+const pt = (e) => (rotated ? { x: e.clientY, y: window.innerWidth - e.clientX } : { x: e.clientX, y: e.clientY });
 window.addEventListener('resize', resize); window.addEventListener('orientationchange', () => setTimeout(resize, 300)); resize();
 
 // 端末が重いときは解像度を自動で下げる
@@ -86,7 +95,6 @@ const sfx = {
 // ───────────── 入力 ─────────────
 const input = { x: 0, y: 0, dash: false, jumpBuf: 0, camDragT: 9 };
 const keys = new Set();
-const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 if (isTouch) document.body.classList.add('touch');
 window.addEventListener('keydown', (e) => {
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
@@ -103,20 +111,22 @@ const stickEl = $('stick'), knob = stickEl.firstElementChild;
 canvas.addEventListener('pointerdown', (e) => {
   if (game.state !== 'play') return;
   canvas.setPointerCapture(e.pointerId);
-  if (e.pointerType === 'touch' && e.clientX < window.innerWidth * 0.45 && stick.id === null) {
-    stick.id = e.pointerId; stick.ox = e.clientX; stick.oy = e.clientY; stick.x = stick.y = 0;
-    Object.assign(stickEl.style, { left: e.clientX + 'px', top: e.clientY + 'px', bottom: 'auto', opacity: 0.9 });
-  } else if (look.id === null) { look.id = e.pointerId; look.x = e.clientX; look.y = e.clientY; }
+  const q = pt(e);
+  if (e.pointerType === 'touch' && q.x < VW * 0.45 && stick.id === null) {
+    stick.id = e.pointerId; stick.ox = q.x; stick.oy = q.y; stick.x = stick.y = 0;
+    Object.assign(stickEl.style, { left: q.x + 'px', top: q.y + 'px', bottom: 'auto', opacity: 0.9 });
+  } else if (look.id === null) { look.id = e.pointerId; look.x = q.x; look.y = q.y; }
 });
 canvas.addEventListener('pointermove', (e) => {
+  const q = pt(e);
   if (e.pointerId === stick.id) {
-    let dx = (e.clientX - stick.ox) / 50, dy = (e.clientY - stick.oy) / 50; const m = Math.hypot(dx, dy);
+    let dx = (q.x - stick.ox) / 50, dy = (q.y - stick.oy) / 50; const m = Math.hypot(dx, dy);
     if (m > 1) { dx /= m; dy /= m; }
     stick.x = dx; stick.y = -dy; knob.style.transform = `translate(${dx * 34}px,${dy * 34}px)`;
   } else if (e.pointerId === look.id) {
     const k = e.pointerType === 'touch' ? 0.007 : 0.005;
-    camYaw -= (e.clientX - look.x) * k; camPitch = Math.max(0.08, Math.min(1.15, camPitch + (e.clientY - look.y) * k * 0.7));
-    look.x = e.clientX; look.y = e.clientY; input.camDragT = 0;
+    camYaw -= (q.x - look.x) * k; camPitch = Math.max(0.08, Math.min(1.15, camPitch + (q.y - look.y) * k * 0.7));
+    look.x = q.x; look.y = q.y; input.camDragT = 0;
   }
 });
 const pUp = (e) => {
@@ -128,11 +138,12 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 let touchDash = false;
 const hold = (el, down, up) => {
   let px = 0, py = 0;
-  el.addEventListener('pointerdown', (e) => { e.preventDefault(); el.setPointerCapture(e.pointerId); el.classList.add('on'); px = e.clientX; py = e.clientY; down(); });
+  el.addEventListener('pointerdown', (e) => { e.preventDefault(); el.setPointerCapture(e.pointerId); el.classList.add('on'); const q = pt(e); px = q.x; py = q.y; down(); });
   el.addEventListener('pointermove', (e) => {      // ボタンを押したまま指をずらすと視点が回る
     if (!el.classList.contains('on')) return;
-    camYaw -= (e.clientX - px) * 0.007; camPitch = Math.max(0.08, Math.min(1.15, camPitch + (e.clientY - py) * 0.005));
-    px = e.clientX; py = e.clientY; input.camDragT = 0;
+    const q = pt(e);
+    camYaw -= (q.x - px) * 0.007; camPitch = Math.max(0.08, Math.min(1.15, camPitch + (q.y - py) * 0.005));
+    px = q.x; py = q.y; input.camDragT = 0;
   });
   const u = () => { el.classList.remove('on'); up && up(); };
   el.addEventListener('pointerup', u); el.addEventListener('pointercancel', u); el.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -155,7 +166,16 @@ function readInput(dt) {
 }
 
 // ───────────── ゲーム状態 ─────────────
-const CAT_H = 0.28, CAT_R = 0.16, SPAWN = { x: -7.4, z: 2 };
+const CAT_H = 0.28, CAT_R = 0.16, CAT_PROBES = [[0.25, 0.1], [-0.17, 0.09]], DOG_PROBES = [[0.4, 0.14], [-0.3, 0.1]], _pr = { x: 0, z: 0 };
+/** 体の前後に置いた小さな円でも当たり判定をして、長い体が壁や家具に突き刺さらないようにする */
+function bodyProbes(a, probes, yLo, yHi) {
+  const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw);
+  for (const [off, r] of probes) {
+    const px = a.x + fx * off, pz = a.z + fz * off; _pr.x = px; _pr.z = pz;
+    if (resolveCircle(_pr, r, yLo, yHi)) { a.x += _pr.x - px; a.z += _pr.z - pz; }
+  }
+}
+const SPAWN = { x: -7.4, z: 2 };
 const game = { state: 'title', level: 1, score: 0, lives: 5, time: 0, mice: [], dogs: [], people: [], vac: null, caught: 0 };
 const cat = { x: SPAWN.x, y: 0, z: SPAWN.z, vx: 0, vy: 0, vz: 0, yaw: Math.PI / 2, onGround: true, coyote: 0, stamina: 1, tired: false, inv: 0, stun: 0, dashing: false, model: makeCat() };
 scene.add(cat.model.group);
@@ -192,14 +212,14 @@ function startLevel(n) {
   for (let i = 0; i < nd; i++) {
     const model = makeDog(i), alert = makeAlert(); alert.position.y = 0.95; model.group.add(alert);
     const bl = makeBlob(0.55); bl.scale.set(0.8, 1.3, 1); bl.position.y = 0.011; model.group.add(bl);
-    game.dogs.push({ ...dogStart[i], yaw: Math.PI, r: 0.2, yLo: 0.15, yHi: 0.55, eye: 0.5, state: 'patrol', path: null, pi: 0, wait: 3 + i * 2, ignore: 0, lost: 0, repath: 0, barkT: 0, giveup: 0, timer: 0, lx: 0, lz: 0, spd: 0, cs: Math.min(5.2, 4.1 + n * 0.15), model, alert });
+    game.dogs.push({ ...dogStart[i], yaw: Math.PI, r: 0.22, probes: DOG_PROBES, yLo: 0.15, yHi: 0.55, eye: 0.5, state: 'patrol', path: null, pi: 0, wait: 3 + i * 2, ignore: 0, lost: 0, repath: 0, barkT: 0, giveup: 0, timer: 0, lx: 0, lz: 0, spd: 0, cs: Math.min(5.2, 4.1 + n * 0.15), model, alert });
     scene.add(model.group);
   }
   const manStart = [{ x: 5, z: -1.5 }, { x: -6, z: 5 }, { x: 1.5, z: 5 }];
   for (let i = 0; i < np; i++) {
     const model = makePerson(i + n), alert = makeAlert(); alert.position.y = 1.95; alert.scale.setScalar(0.32); model.group.add(alert);
     const bl = makeBlob(0.42, 0.4); bl.position.y = 0.011; model.group.add(bl);
-    game.people.push({ ...manStart[i], yaw: 0, r: 0.2, yLo: 0.15, yHi: 1.7, eye: 1.55, lost: 0, lx: 0, lz: 0, state: 'walk', path: null, pi: 0, wait: 1 + i, cool: 0, timer: 0, repath: 0, spd: 0, cs: Math.min(3.1, 2.5 + n * 0.08), model, alert });
+    game.people.push({ ...manStart[i], yaw: 0, r: 0.27, yLo: 0.15, yHi: 1.7, eye: 1.55, lost: 0, lx: 0, lz: 0, state: 'walk', path: null, pi: 0, wait: 1 + i, cool: 0, timer: 0, repath: 0, spd: 0, cs: Math.min(3.1, 2.5 + n * 0.08), model, alert });
     scene.add(model.group);
   }
   game.vac = { x: 0, z: 2, dir: 0.4, mesh: buildVacuum(), turn: 0 }; { const bl = makeBlob(0.26, 0.45); bl.position.y = 0.011; game.vac.mesh.add(bl); } scene.add(game.vac.mesh);
@@ -264,6 +284,7 @@ function updateCat(dt) {
 
   c.x += c.vx * dt; c.z += c.vz * dt;
   resolveCircle(c, CAT_R, c.y + 0.02, c.y + CAT_H);
+  bodyProbes(c, CAT_PROBES, c.y + 0.02, c.y + CAT_H);      // 頭としっぽの付け根も壁にめり込ませない
   c.vy -= 14 * dt;
   let ny = c.y + c.vy * dt;
   const ceil = ceilingAt(c.x, c.z, 0.1, c.y + CAT_H);
@@ -291,7 +312,10 @@ function updateCamera(dt, title) {
   const t = rayT(tx, tz, tx + dx * (D + 0.25), tz + dz * (D + 0.25), true, cat.y);
   const want = Math.max(0.3, Math.min(D, (D + 0.25) * t - 0.25));
   camDist = want < camDist ? want : camDist + (want - camDist) * Math.min(1, dt * 3);
-  camera.position.set(tx + dx * camDist, Math.min(WALL_H - 0.15, ty + dy * camDist + (D - camDist) * 0.18), tz + dz * camDist);
+  const cy = Math.min(WALL_H - 0.2, ty + dy * camDist + (D - camDist) * 0.18);
+  _pr.x = tx + dx * camDist; _pr.z = tz + dz * camDist;
+  resolveCircle(_pr, 0.22, cy - 0.14, cy + 0.14);            // カメラ自体も壁・家具から離す（横からのめり込み防止）
+  camera.position.set(_pr.x, cy, _pr.z);
   camera.lookAt(tx, ty + 0.08, tz);
 }
 
@@ -343,6 +367,7 @@ function steer(a, ux, uz, speed, dt) {
   const turn = Math.max(0.25, Math.cos(angDiff(ty, a.yaw)));
   a.x += ux * speed * turn * dt; a.z += uz * speed * turn * dt; a.spd = speed * turn;
   resolveCircle(a, a.r, a.yLo, a.yHi);
+  if (a.probes) bodyProbes(a, a.probes, a.yLo, a.yHi);
 }
 function canSee(a, range, near) {
   const dx = cat.x - a.x, dz = cat.z - a.z, dist = Math.hypot(dx, dz);
@@ -361,7 +386,8 @@ function updateDog(d, dt) {
     if (sees) { d.state = 'chase'; d.lost = 0; d.repath = 0; d.giveup = 0; d.alert.visible = true; sfx.bark(); showMsg('イヌに見つかった！ 高いところへ逃げろ！', 1.6); }
     else if (follow(d, navDog, 1.4, dt)) { d.wait -= dt; if (d.wait <= 0) { const p = randFree(); setPath(d, navDog, p.x, p.z); d.wait = rand(1, 3.5); } }
   } else if (d.state === 'chase') {
-    if (sees) { d.lost = 0; d.lx = cat.x; d.lz = cat.z; } else d.lost += dt;
+    // 追跡中にすぐ近くまで来たら、家具の上にいて見えなくても匂いと音で居場所が分かる
+    if (sees || (cat.inv <= 0 && dist < 1.8 && los(d.x, d.z, cat.x, cat.z))) { d.lost = 0; d.lx = cat.x; d.lz = cat.z; } else d.lost += dt;
     if (d.lost > 1.5 || cat.inv > 0) { d.state = 'search'; setPath(d, navDog, d.lx, d.lz); d.timer = 2.5; }
     else if (cat.y >= 0.6 && dist < 1.2) {            // 高い所にいて届かない → 吠える
       d.spd = 0; d.yaw = lerpAngle(d.yaw, Math.atan2(dx, dz), dt * 8); wag = true;
@@ -374,7 +400,8 @@ function updateDog(d, dt) {
     else if (follow(d, navDog, 2.8, dt)) { d.yaw += dt * 2.4; d.timer -= dt; if (d.timer <= 0) { d.state = 'patrol'; d.alert.visible = false; d.path = null; d.wait = 0; } }
   }
   d.model.group.position.set(d.x, 0, d.z); d.model.group.rotation.y = d.yaw;
-  d.model.update(dt, d.spd, { run: d.spd > 3, wag, alert: d.state !== 'patrol', rest: d.state === 'patrol' && d.spd < 0.05 });
+  d.model.update(dt, d.spd, { run: d.spd > 3, wag, alert: d.state !== 'patrol', rest: d.state === 'patrol' && d.spd < 0.05,
+    look: d.state !== 'patrol' ? Math.max(-1, Math.min(1, angDiff(Math.atan2(dx, dz), d.yaw))) : 0, bark: wag && d.barkT > 0.8 });
   return d.state === 'chase' && cat.inv <= 0 && dist < 0.6 && cat.y < 0.6;
 }
 
@@ -469,6 +496,7 @@ let ratProto = null;
 }
 $('oBtn').addEventListener('click', () => {
   audio();
+  try { if (isTouch && screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {}); } catch { /* 対応していない端末では画面を回して表示する */ }
   if (game.state === 'clear') startLevel(game.level + 1);
   else { game.score = 0; game.lives = 5; startLevel(1); }
 });

@@ -206,6 +206,7 @@ export function buildMouse() {
   return { group: g, body, tail, t: Math.random() * 10 };
 }
 export function animateMouse(m, dt, speed) {
+  if (m.uni) { m.uni.uT.value += dt * (0.5 + Math.min(1.6, speed * 0.45)); m.uni.uRun.value += (Math.min(1, speed / 2) - m.uni.uRun.value) * Math.min(1, dt * 8); m.body.rotation.x = speed < 0.1 ? -0.1 - Math.sin(m.uni.uT.value * 2.0) * 0.04 : 0; return; }
   m.t += dt * (1 + speed * 4);
   m.body.position.y = speed > 0.1 ? Math.abs(Math.sin(m.t * 4)) * 0.006 : 0;
   m.body.rotation.x = speed < 0.1 ? -0.25 - Math.sin(m.t * 3) * 0.05 : 0;   // 止まると後ろ足で立って匂いをかぐ
@@ -308,12 +309,26 @@ export function makeBlob(r, opacity = 0.42) {
   return m;
 }
 
-/** 実写スキャンのネズミから個体を作る */
+/** 実写スキャンのネズミから個体を作る。骨が無いので、しっぽと体の動きは頂点シェーダーで付ける */
 export function buildMouseFrom(proto) {
   const g = new THREE.Group(), body = new THREE.Group(), m = proto.clone(true); g.add(body);
+  const uni = { uT: { value: Math.random() * 20 }, uRun: { value: 0 } };
   m.scale.setScalar(1.9); m.position.z = 0.065; body.add(m);
-  m.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-  return { group: g, body, tail: [], t: Math.random() * 10 };
+  m.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true; o.material = o.material.clone();
+    o.material.onBeforeCompile = (sd) => {
+      sd.uniforms.uT = uni.uT; sd.uniforms.uRun = uni.uRun;
+      sd.vertexShader = 'uniform float uT; uniform float uRun;\n' + sd.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+        float tl = smoothstep(-0.015, -0.11, position.z), hd = smoothstep(0.0, 0.04, position.z);
+        transformed.x += sin(uT * 13.0 + position.z * 55.0) * 0.011 * tl * (0.35 + uRun);
+        transformed.x += sin(uT * 24.0 + position.z * 30.0) * 0.0018 * uRun * (1.0 - tl);
+        transformed.y += abs(sin(uT * 24.0 + position.z * 20.0)) * 0.0022 * uRun * (1.0 - tl);
+        transformed.y += sin(uT * 7.0) * 0.0018 * hd * (1.0 - uRun);`);
+    };
+    o.material.customProgramCacheKey = () => 'rat';
+  });
+  return { group: g, body, tail: [], t: Math.random() * 10, uni };
 }
 
 // ───────────── 骨格アニメーション付きのリアルなモデル（ネコ・イヌ・人） ─────────────
@@ -347,7 +362,7 @@ export function setCharacterModels(m) {
       protos.people = arms.map((name, i) => {
         const arm = sc.getObjectByName(name), names = new Set(); arm.traverse((o) => names.add(o.name));
         const walk = new THREE.AnimationClip('walk' + i, clip.duration, clip.tracks.filter((t) => names.has(t.name.slice(0, t.name.lastIndexOf('.')))));
-        const p = prep(sc, { walk }, i ? 1.63 : 1.76, name); p.hide = arms[1 - i];
+        const p = prep(sc, { walk }, i ? 1.63 : 1.76, name); p.hide = arms[1 - i]; p.arm = name;
         // 立ち止まるときのポーズ：両足が一番そろう瞬間
         let L = null, R = null; arm.traverse((o) => { if (o.isBone && /LeftFoot/.test(o.name) && !L) L = o; if (o.isBone && /RightFoot/.test(o.name) && !R) R = o; });
         const mixer = new THREE.AnimationMixer(sc); mixer.clipAction(walk).play(); let best = 1e9; p.standT = 0;
@@ -394,33 +409,97 @@ function spawn(proto, fur) {
   return { group, inner, mixer, acts, w: {} };
 }
 const approach = (m, k, target, dt) => { m.w[k] = (m.w[k] ?? 0) + (target - (m.w[k] ?? 0)) * Math.min(1, dt * 8); m.acts[k].setEffectiveWeight(m.w[k]); };
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+// 骨を、モデル全体の向き（x:左右 / y:上 / z:前）を基準に追加で回す。素材に無い動きを足すのに使う
+const _q = new THREE.Quaternion(), _qp = new THREE.Quaternion(), _ax = new THREE.Vector3();
+function twist(bone, root, ax, ay, az, angle) {
+  if (!bone || !angle) return;
+  _qp.identity(); const chain = [];
+  for (let o = bone.parent; o && o !== root; o = o.parent) chain.push(o);
+  for (let i = chain.length - 1; i >= 0; i--) _qp.multiply(chain[i].quaternion);
+  _q.setFromAxisAngle(_ax.set(ax, ay, az), angle);
+  bone.quaternion.premultiply(_qp).premultiply(_q).premultiply(_qp.invert());
+}
+/** 名前（正規表現も可）で骨を集め、毎フレーム元の姿勢に戻せるようにする */
+function rig(m, top, map) {
+  const B = {}, all = [];
+  for (const k in map) {
+    B[k] = [].concat(map[k]).map((n) => { let f = null; top.traverse((o) => { if (!f && o.isBone && (n instanceof RegExp ? n.test(o.name) : o.name === n)) f = o; }); return f; }).filter(Boolean);
+    for (const bn of B[k]) { bn.userData.rest = bn.quaternion.clone(); all.push(bn); }
+  }
+  m.B = B; m.reset = () => { for (const bn of all) bn.quaternion.copy(bn.userData.rest); };
+  return B;
+}
 
 export function makeCat() {
   if (!protos.cat) { const q = buildCat(); return { group: q.group, update: (dt, sp, o) => animateQuad(q, dt, sp, o) }; }
-  const m = spawn(protos.cat, { len: 0.011, density: 560, layers: 10 }); m.acts.walk.time = 0.2;
+  const m = spawn(protos.cat, { len: 0.011, density: 560, layers: 10 }), root = m.inner.children[0], walk = m.acts.walk, dur = walk.getClip().duration;
+  const n = (i) => `Bone${String(i).padStart(3, '0')}_Armature`;
+  const B = rig(m, root, { front: n(1), back: n(2), neck: n(10), foreL: [n(21), n(23)], hindL: [n(22), n(24)], tail: [n(3), n(4), n(6), n(5), n(7)] });
+  let T = Math.random() * 9, ww = 0, aw = 0;
   return { group: m.group, update(dt, sp, o = {}) {
-    // 歩行の動きを速さに合わせて再生。止まっているときはごくゆっくり、空中では脚を伸ばしたまま
-    m.acts.walk.timeScale = o.air ? 0.25 : sp < 0.15 ? 0 : Math.min(4.6, 0.7 + sp * 0.72);
-    m.inner.rotation.x += ((o.air ? Math.max(-0.5, Math.min(0.5, -(o.vy || 0) * 0.07)) : 0) - m.inner.rotation.x) * Math.min(1, dt * 12);
-    m.mixer.update(dt);
+    T += dt;
+    const air = !!o.air, k = Math.min(1, dt * 10);
+    ww += ((air ? 0.15 : sp > 0.15 ? 1 : 0) - ww) * k; aw += ((air ? 1 : 0) - aw) * k;
+    walk.setEffectiveWeight(ww); walk.timeScale = air ? 0.3 : Math.min(4.6, 0.7 + sp * 0.72);
+    m.reset(); m.mixer.update(dt);
+    const run = air ? 0 : clamp01((sp - 3.8) / 1.4), ph = (walk.time / dur) * Math.PI * 2, idle = (1 - ww) * (1 - aw);
+    if (run > 0) {                                        // ダッシュ：背中を伸び縮みさせて跳ねるように走る
+      const g = Math.sin(ph * 2);
+      twist(B.front[0], root, 1, 0, 0, -0.17 * run * g); twist(B.back[0], root, 1, 0, 0, 0.17 * run * g);
+    }
+    m.inner.position.y = protos.cat.off.y + (0.5 + 0.5 * Math.sin(ph * 2 + 1)) * 0.035 * run;
+    if (aw > 0.01) {                                      // ジャンプ：前脚を前へ、後ろ脚を後ろへ伸ばし、しっぽを流す
+      for (const bn of B.foreL) twist(bn, root, 1, 0, 0, -0.85 * aw);
+      for (const bn of B.hindL) twist(bn, root, 1, 0, 0, 0.75 * aw);
+      twist(B.tail[0], root, 1, 0, 0, -0.55 * aw);
+    }
+    B.tail.forEach((bn, i) => twist(bn, root, 0, 1, 0, Math.sin(T * (1.5 + run * 6) - i * 0.6) * (0.05 + 0.1 * idle)));   // しっぽをゆらす
+    if (idle > 0.01) { twist(B.tail[0], root, 1, 0, 0, Math.sin(T * 0.7) * 0.08 * idle); twist(B.neck[0], root, 0, 1, 0, Math.sin(T * 0.45) * 0.4 * idle); twist(B.neck[0], root, 1, 0, 0, Math.sin(T * 0.8) * 0.05 * idle); }
+    m.inner.rotation.x += ((air ? Math.max(-0.5, Math.min(0.5, -(o.vy || 0) * 0.07)) : 0) - m.inner.rotation.x) * Math.min(1, dt * 12);
   } };
 }
 export function makeDog(i = 0) {
   if (!protos.dog) { const q = buildDog(i); return { group: q.group, update: (dt, sp, o) => animateQuad(q, dt, sp, o) }; }
-  const m = spawn(protos.dog, { len: 0.016, density: 380, layers: 8 });
+  const m = spawn(protos.dog, { len: 0.016, density: 380, layers: 8 }), root = m.inner.children[0], dur = m.acts.walk.getClip().duration;
+  const B = rig(m, root, { spine: 'Spine_03', chest: 'Chest_04', neck: 'Neck_05', head: 'Head_06', jaw: 'Jaw_07', tail: ['Tail1_017', 'Tail2_018', 'Tail3_019'] });
+  let T = Math.random() * 9, wag = 0, jaw = 0, look = 0, up = 0;
   return { group: m.group, update(dt, sp, o = {}) {
-    const walk = Math.min(1, sp / 0.5), sit = o.rest ? 1 : 0;
+    T += dt;
+    const walk = Math.min(1, sp / 0.5), sit = o.rest ? 1 : 0, k = Math.min(1, dt * 8);
     approach(m, 'walk', walk, dt); approach(m, 'sit', (1 - walk) * sit, dt); approach(m, 'idle', (1 - walk) * (1 - sit), dt);
     m.acts.walk.timeScale = Math.min(4.6, 0.6 + sp * 0.95);
-    m.mixer.update(dt);
+    m.reset(); m.mixer.update(dt);
+    wag += ((o.wag || o.alert ? 1 : 0.15) - wag) * k; look += ((o.look || 0) - look) * k; up += ((o.wag ? 1 : 0) - up) * k;
+    jaw = o.bark ? 1 : Math.max(0, jaw - dt * 5);
+    B.tail.forEach((bn, j) => twist(bn, root, 0, 1, 0, Math.sin(T * 13 - j * 0.5) * 0.32 * wag));           // しっぽを振る
+    twist(B.neck[0], root, 0, 1, 0, look * 0.55); twist(B.neck[0], root, 1, 0, 0, -0.4 * up);               // ネコの方を向く・見上げる
+    twist(B.jaw[0], root, 1, 0, 0, 0.5 * jaw + (sp > 3 ? 0.18 : 0));                                         // 吠える・走ると口が開く
+    const run = clamp01((sp - 3) / 1.2), ph = (m.acts.walk.time / dur) * Math.PI * 2;
+    if (run > 0) { const g = Math.sin(ph * 2); twist(B.chest[0], root, 1, 0, 0, -0.1 * run * g); twist(B.spine[0], root, 1, 0, 0, 0.07 * run * g); }
+    m.inner.position.y = protos.dog.off.y + (0.5 + 0.5 * Math.sin(ph * 2 + 1)) * 0.05 * run;
   } };
 }
 export function makePerson(i = 0) {
   if (!protos.people) { const q = buildPerson(i); return { group: q.group, update: (dt, sp, o) => animatePerson(q, dt, sp, o && o.chase) }; }
-  const p = protos.people[i % 2], m = spawn(p, null), a = m.acts.walk, dur = a.getClip().duration; a.time = p.standT;
-  return { group: m.group, update(dt, sp) {
+  const p = protos.people[i % 2], m = spawn(p, null), root = m.inner.children[0], a = m.acts.walk, dur = a.getClip().duration; a.time = p.standT;
+  const top = root.getObjectByName(p.arm);
+  const B = rig(m, top, { spine: /^mixamorigSpine_\d+$/, spine2: /^mixamorigSpine2_\d+$/, head: /^mixamorigHead_\d+$/, arms: [/^mixamorigLeftArm_\d+$/, /^mixamorigRightArm_\d+$/], fore: [/^mixamorigLeftForeArm_\d+$/, /^mixamorigRightForeArm_\d+$/] });
+  let T = Math.random() * 9, cw = 0, iw = 0;
+  return { group: m.group, update(dt, sp, o = {}) {
+    T += dt;
     if (sp > 0.1) a.timeScale = Math.min(2.4, sp / 1.25);
     else { const d = ((p.standT - a.time) % dur + dur) % dur; a.timeScale = d < 0.04 || d > dur - 0.04 ? 0 : 1; }   // 足がそろう所まで進めて止まる
-    m.mixer.update(dt);
+    m.reset(); m.mixer.update(dt);
+    const k = Math.min(1, dt * 6); cw += ((o.chase ? 1 : 0) - cw) * k; iw += ((sp < 0.1 ? 1 : 0) - iw) * k;
+    if (cw > 0.01) {                                      // 追いかける：前かがみになり、両手を伸ばして下を見る
+      twist(B.spine[0], root, 1, 0, 0, 0.24 * cw); twist(B.spine2[0], root, 1, 0, 0, 0.16 * cw);
+      for (const bn of B.arms) twist(bn, root, 1, 0, 0, -0.95 * cw);
+      for (const bn of B.fore) twist(bn, root, 1, 0, 0, -0.35 * cw);
+      twist(B.head[0], root, 1, 0, 0, 0.2 * cw);
+    }
+    twist(B.spine2[0], root, 1, 0, 0, Math.sin(T * 1.5) * 0.018);                                        // 呼吸
+    if (iw > 0.01) twist(B.head[0], root, 0, 1, 0, Math.sin(T * 0.4) * 0.45 * iw);                        // 立ち止まると見回す
   } };
 }

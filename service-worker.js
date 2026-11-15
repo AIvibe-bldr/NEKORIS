@@ -1,5 +1,5 @@
 // オフラインでも遊べるようにファイルをキャッシュする（通信できるときは常に最新版を取得）
-const CACHE = 'neko-chase-v4';
+const CACHE = 'neko-chase-v5';
 const FILES = [
   './',
   'index.html',
