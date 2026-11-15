@@ -85,10 +85,13 @@ function segBox(b, ax, az, dx, dz, best) {
   return t0;
 }
 /** 線分a→bが背の高い物（壁・タンス等）に当たる位置 t(0..1)。当たらなければ1 */
-export function rayT(ax, az, bx, bz, cam = false) {
+export function rayT(ax, az, bx, bz, cam = false, catY = 0) {
   const dx = bx - ax, dz = bz - az;
   let best = 1;
-  for (let i = 0; i < boxes.length; i++) if (boxes[i].sight) best = segBox(boxes[i], ax, az, dx, dz, best);
+  for (let i = 0; i < boxes.length; i++) {
+    const b = boxes[i];     // カメラは、ネコより高い中くらいの家具（チェスト・カウンター等）にもめり込まない
+    if (b.sight || (cam && b.y0 < 0.5 && b.y1 > 0.6 && b.y1 > catY + 0.12)) best = segBox(b, ax, az, dx, dz, best);
+  }
   if (cam) for (let i = 0; i < camBoxes.length; i++) best = segBox(camBoxes[i], ax, az, dx, dz, best);
   return best;
 }
@@ -230,13 +233,40 @@ function tex(w, h, draw, rx = 1, ry = 1) {
   return t;
 }
 
+/** カラーテクスチャの明暗を高さとみなして法線マップを作る */
+function normalFrom(t, strength = 1) {
+  const src = t.image, w = src.width, h = src.height;
+  const d = src.getContext('2d').getImageData(0, 0, w, h).data;
+  const H = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) H[i] = (d[i * 4] * 0.3 + d[i * 4 + 1] * 0.59 + d[i * 4 + 2] * 0.11) / 255;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'), out = g.createImageData(w, h), o = out.data;
+  const at = (x, y) => H[((y + h) % h) * w + ((x + w) % w)];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = (at(x + 1, y) - at(x - 1, y)) * strength, dy = (at(x, y + 1) - at(x, y - 1)) * strength;
+    const l = Math.hypot(dx, dy, 1), i = (y * w + x) * 4;
+    o[i] = (-dx / l * 0.5 + 0.5) * 255; o[i + 1] = (dy / l * 0.5 + 0.5) * 255; o[i + 2] = (1 / l * 0.5 + 0.5) * 255; o[i + 3] = 255;
+  }
+  g.putImageData(out, 0, 0);
+  const n = new THREE.CanvasTexture(c); n.wrapS = n.wrapT = THREE.RepeatWrapping; n.repeat.copy(t.repeat); n.anisotropy = 4;
+  return n;
+}
+/** 布の織り目 */
+const weaveTex = (rep) => tex(128, 128, (g, w) => {
+  const R = rng(17); g.fillStyle = '#808080'; g.fillRect(0, 0, w, w);
+  for (let y = 0; y < w; y += 4) for (let x = 0; x < w; x += 4) {
+    const v = 110 + R() * 60 + (((x + y) / 4) % 2 ? 30 : -30);
+    g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(x, y, 4, 4);
+  }
+}, rep, rep);
+
 const woodTex = (rx, ry) => tex(512, 512, (g, w, h) => {
   const R = rng(7), rows = 8, ph = h / rows;
   for (let r = 0; r < rows; r++) {
     let x = -R() * w * 0.4;
     while (x < w) {
       const len = w * (0.32 + R() * 0.3);
-      g.fillStyle = `hsl(${28 + R() * 4},${42 + R() * 6}%,${45 + R() * 6}%)`;
+      g.fillStyle = `hsl(${26 + R() * 4},${44 + R() * 6}%,${36 + R() * 6}%)`;
       g.fillRect(x, r * ph, len, ph);
       g.fillStyle = 'rgba(35,18,6,.6)'; g.fillRect(x, r * ph, 1.5, ph);
       x += len;
@@ -296,17 +326,6 @@ const doorsTex = (base, line, n) => tex(256, 256, (g, w) => {
   g.fillStyle = '#b9b9b9'; g.fillRect(w - 20, w / 2 - 22, 5, 44);
 }, n, 1);
 
-const skyTex = () => tex(256, 256, (g, w) => {
-  const gr = g.createLinearGradient(0, 0, 0, w);
-  gr.addColorStop(0, '#7fb7f2'); gr.addColorStop(0.6, '#d9ecff'); gr.addColorStop(0.61, '#7fae6a'); gr.addColorStop(1, '#4f8a48');
-  g.fillStyle = gr; g.fillRect(0, 0, w, w);
-  g.fillStyle = 'rgba(255,255,255,.85)';
-  for (const [x, y, r] of [[60, 50, 22], [85, 45, 28], [112, 54, 20], [190, 80, 18], [210, 76, 22]]) { g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); }
-  g.fillStyle = '#3f7a3d';
-  for (const [x, r] of [[40, 34], [150, 42], [225, 30]]) { g.beginPath(); g.arc(x, 160, r, 0, 7); g.fill(); }
-  g.fillStyle = '#f4f4f4'; g.fillRect(w / 2 - 4, 0, 8, w); g.fillRect(0, w / 2 - 4, w, 8);
-});
-
 const artTex = (seed) => tex(128, 128, (g, w) => {
   const R = rng(seed); g.fillStyle = `hsl(${R() * 360},30%,85%)`; g.fillRect(0, 0, w, w);
   for (let k = 0; k < 7; k++) {
@@ -334,6 +353,8 @@ export function buildWorld(scene) {
     red: std(0xb5403a), steelDark: std(0x55585c, { roughness: 0.4, metalness: 0.8 }),
   };
 
+  const weaveN = normalFrom(weaveTex(7), 2.2);
+  for (const k of ['sofa', 'sofa2', 'cushion', 'linen', 'duvet', 'carpet']) { M[k].normalMap = weaveN; M[k].normalScale = new THREE.Vector2(0.55, 0.55); }
   const col = (x0, z0, x1, z1, y0, y1) => boxes.push({ x0, z0, x1, z1, y0, y1, sight: y0 < 0.4 && y1 > 1.4 });
   function B(x0, z0, x1, z1, y0, y1, mat, o = {}) {
     const w = x1 - x0, h = y1 - y0, d = z1 - z0;
@@ -366,23 +387,45 @@ export function buildWorld(scene) {
   }
 
   // 床・天井
-  plane(-10, -7, 10, 7, 0, std(0xffffff, { map: woodTex(10, 7), roughness: 0.42 }));
-  plane(0.1, -7, 10, 0.9, 0.003, std(0xffffff, { map: tileTex(9.9, 7.9), roughness: 0.3 }));
-  plane(5.1, 3.1, 10, 7, 0.003, std(0xffffff, { map: tileTex(4.9, 3.9), roughness: 0.3 }));
-  const ceil = plane(-10.2, -7.2, 10.2, 7.2, WALL_H, M.ceil); ceil.rotation.x = Math.PI / 2; ceil.receiveShadow = false;
+  const floorMat = (t, rough, ns) => std(0xffffff, { map: t, normalMap: normalFrom(t, 2.5), normalScale: new THREE.Vector2(ns, ns), roughness: rough });
+  plane(-10, -7, 10, 7, 0, floorMat(woodTex(10, 7), 0.5, 0.5));
+  plane(0.1, -7, 10, 0.9, 0.003, floorMat(tileTex(9.9, 7.9), 0.32, 0.8));
+  plane(5.1, 3.1, 10, 7, 0.003, floorMat(tileTex(4.9, 3.9), 0.32, 0.8));
+  V(-10.2, -7.2, 10.2, 7.2, WALL_H, WALL_H + 0.15, M.ceil);          // 天井（日光をさえぎる）
 
   // 壁
   const wall = (x0, z0, x1, z1) => {
-    B(x0, z0, x1, z1, 0, WALL_H, M.wall, { cast: false });
+    B(x0, z0, x1, z1, 0, WALL_H, M.wall);
     V(x0 - 0.012, z0 - 0.012, x1 + 0.012, z1 + 0.012, 0, 0.09, M.base, { cast: false });
   };
   const lintel = (x0, z0, x1, z1) => {
-    B(x0, z0, x1, z1, 2.08, WALL_H, M.wall, { cast: false });
+    B(x0, z0, x1, z1, 2.08, WALL_H, M.wall);
     const horiz = x1 - x0 > z1 - z0, e = 0.03;
     if (horiz) { V(x0 - 0.05, z0 - e, x0, z1 + e, 0, 2.08, M.base); V(x1, z0 - e, x1 + 0.05, z1 + e, 0, 2.08, M.base); V(x0 - 0.05, z0 - e, x1 + 0.05, z1 + e, 2.08, 2.14, M.base); }
     else { V(x0 - e, z0 - 0.05, x1 + e, z0, 0, 2.08, M.base); V(x0 - e, z1, x1 + e, z1 + 0.05, 0, 2.08, M.base); V(x0 - e, z0 - 0.05, x1 + e, z1 + 0.05, 2.08, 2.14, M.base); }
   };
-  wall(-10.2, -7.2, 10.2, -7); wall(-10.2, 7, 10.2, 7.2); wall(-10.2, -7, -10, 7); wall(10, -7, 10.2, 7);
+  // 外壁（窓は本当に開いていて、日光が差し込む）
+  const glass = std(0xcfe6ff, { transparent: true, opacity: 0.1, roughness: 0.03, depthWrite: false });
+  const outer = (alongX, a0, a1, c0, c1, wins) => {
+    const P = (u0, u1, y0, y1, mat, o) => (alongX ? V(u0, c0, u1, c1, y0, y1, mat, o) : V(c0, u0, c1, u1, y0, y1, mat, o));
+    let u = a0;
+    for (const [c, w] of wins) {
+      const w0 = c - w / 2, w1 = c + w / 2;
+      P(u, w0, 0, WALL_H, M.wall); P(w0, w1, 0, 0.9, M.wall); P(w0, w1, 2.1, WALL_H, M.wall);
+      for (const [f0, f1, y0, y1] of [[w0, w0 + 0.05, 0.9, 2.1], [w1 - 0.05, w1, 0.9, 2.1], [w0, w1, 2.05, 2.1], [w0, w1, 0.9, 0.95], [c - 0.02, c + 0.02, 0.95, 2.05], [w0, w1, 1.48, 1.52]]) P(f0, f1, y0, y1, M.base, { cast: false });
+      const mid = (c0 + c1) / 2, s0 = Math.min(mid, mid + (c0 + c1 > 0 ? -1 : 1) * 0.16);   // 室内側に張り出す窓台
+      if (alongX) V(w0 - 0.05, s0, w1 + 0.05, s0 + 0.16, 0.86, 0.9, M.base, { cast: false }); else V(s0, w0 - 0.05, s0 + 0.16, w1 + 0.05, 0.86, 0.9, M.base, { cast: false });
+      const gm = new THREE.Mesh(new THREE.PlaneGeometry(w, 1.2), glass); gm.position.set(alongX ? c : mid, 1.5, alongX ? mid : c); if (!alongX) gm.rotation.y = Math.PI / 2; gm.material.side = THREE.DoubleSide; scene.add(gm);
+      u = w1;
+    }
+    P(u, a1, 0, WALL_H, M.wall);
+    if (alongX) { col(a0, c0, a1, c1, 0, WALL_H); V(a0, c0 - 0.012, a1, c1 + 0.012, 0, 0.09, M.base, { cast: false }); }
+    else { col(c0, a0, c1, a1, 0, WALL_H); V(c0 - 0.012, a0, c1 + 0.012, a1, 0, 0.09, M.base, { cast: false }); }
+  };
+  outer(true, -10.2, 10.2, -7.2, -7, [[-3, 1.8]]);
+  outer(true, -10.2, 10.2, 7, 7.2, [[-6, 1.8], [1.3, 1.6], [7.5, 1.2]]);
+  outer(false, -7, 7, -10.2, -10, [[-1.2, 2.2]]);
+  outer(false, -7, 7, 10, 10.2, [[-3.5, 2.2]]);
   // リビング｜キッチン (x=0)
   wall(-0.1, -7, 0.1, -4.2); wall(-0.1, -1.2, 0.1, 0.9); lintel(-0.1, -4.2, 0.1, -1.2);
   // リビング・キッチン｜廊下 (z=1)
@@ -393,13 +436,30 @@ export function buildWorld(scene) {
   wall(-2.1, 3.1, -1.9, 7); wall(4.9, 3.1, 5.1, 7);
 
   // 窓・絵・照明器具
-  const sky = new THREE.MeshBasicMaterial({ map: skyTex(), toneMapped: false });
-  const win = (x, z, facing, w = 1.8) => {
-    panel(x, 1.5, z, w, 1.2, facing, sky);
-    const f = facing[1] === 'x';
-    V(...(f ? [x - 0.03, z - w / 2 - 0.05, x + 0.03, z + w / 2 + 0.05] : [x - w / 2 - 0.05, z - 0.03, x + w / 2 + 0.05, z + 0.03]), 0.84, 0.9, M.base, { cast: false });
-  };
-  win(-9.995, -1.2, '+x', 2.2); win(-3, -6.995, '+z'); win(9.995, -3.5, '-x', 2.2); win(-6, 6.995, '-z'); win(1.3, 6.995, '-z', 1.6); win(7.5, 6.995, '-z', 1.2);
+  // 屋外（空・庭・木）
+  {
+    const c = document.createElement('canvas'); c.width = 4; c.height = 256;
+    const g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 256);
+    gr.addColorStop(0, '#2f6fc4'); gr.addColorStop(0.42, '#8fc0f0'); gr.addColorStop(0.5, '#e6f1fb'); gr.addColorStop(0.51, '#9db59a'); gr.addColorStop(1, '#6f8f66');
+    g.fillStyle = gr; g.fillRect(0, 0, 4, 256);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(52, 24, 16), new THREE.MeshBasicMaterial({ map: t, side: THREE.BackSide, toneMapped: false, color: 0xffffff }));
+    scene.add(sky);
+    const lawn = new THREE.Mesh(new THREE.CircleGeometry(52, 32), std(0x6f9a4c, { roughness: 1 }));
+    lawn.rotation.x = -Math.PI / 2; lawn.position.y = -0.03; lawn.receiveShadow = true; scene.add(lawn);
+    const R = rng(77), leafM = [std(0x4f8a3c, { roughness: 1 }), std(0x3f7434, { roughness: 1 }), std(0x5f9a48, { roughness: 1 })], trunk = std(0x5a4030, { roughness: 1 });
+    for (let i = 0; i < 26; i++) {
+      const a = (i / 26) * 6.283 + R() * 0.2, d = 15 + R() * 9, x = Math.cos(a) * d * 1.25, z = Math.sin(a) * d, hgt = 2.5 + R() * 3;
+      cyl(x, z, 0.18, 0, hgt * 0.5, trunk, 0.12, false);
+      for (let k = 0; k < 3; k++) {
+        const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), leafM[(i + k) % 3]);
+        m.position.set(x + R() - 0.5, hgt * (0.55 + k * 0.2), z + R() - 0.5); m.scale.set(1.3 + R(), 1.1 + R() * 0.8, 1.3 + R()); scene.add(m);
+      }
+    }
+    for (const [x0, z0, x1, z1] of [[-14, -11.5, 14, -11.2], [-14, 11.2, 14, 11.5], [-14.3, -11.5, -14, 11.5], [14, -11.5, 14.3, 11.5]]) V(x0, z0, x1, z1, 0, 1.3, std(0x4a7a3a, { roughness: 1 }), { cast: false });
+  }
+  // 窓からの空の明かり（補助光）
+  for (const [x, z] of [[-8.7, -1.2], [8.7, -3.5], [-6, 5.9], [1.3, 5.9]]) { const pl = new THREE.PointLight(0xd6e6ff, 5, 7.5, 1.7); pl.position.set(x, 1.6, z); scene.add(pl); }
   const art = (x, y, z, facing, w, h, seed) => panel(x, y, z, w, h, facing, std(0xffffff, { map: artTex(seed), roughness: 0.6 }));
   art(-2.5, 1.6, 1.105, '+z', 0.9, 0.6, 5); art(3, 1.6, 1.105, '+z', 0.6, 0.8, 9); art(-3.5, 1.6, 0.895, '-z', 1.1, 0.7, 21);
   art(-9.995, 1.7, 5, '+x', 0.8, 0.5, 33); art(-1.895, 1.6, 5, '+x', 0.7, 0.9, 41); art(0.105, 1.7, -5.6, '+x', 0.6, 0.6, 51);
@@ -540,5 +600,22 @@ export function buildWorld(scene) {
   B(9.2, 3.3, 9.8, 3.9, 0, 0.45, M.card);
   plane(7, 4.6, 8.4, 5.4, 0.006, std(0x7fa3b8, { roughness: 1 }));
 
+  // 接地の陰影（家具や壁のまわりの床をほんのり暗くする）
+  {
+    const pos = [], colr = [], idx = [];
+    const vert = (x, z, a) => { pos.push(x, 0.009, z); colr.push(0, 0, 0, a); return pos.length / 3 - 1; };
+    for (const b of boxes) {
+      if (b.y0 > 0.75 || b.x0 < -10.1 || b.x1 > 10.1 || b.z0 < -7.1 || b.z1 > 7.1) continue;
+      const tall = b.y1 - b.y0 > 1.2, m = tall ? 0.3 : 0.2, a = (tall ? 0.42 : 0.5) * (1 - b.y0 / 0.8);
+      const i0 = [vert(b.x0, b.z0, a), vert(b.x1, b.z0, a), vert(b.x1, b.z1, a), vert(b.x0, b.z1, a)];
+      const o0 = [vert(b.x0 - m, b.z0 - m, 0), vert(b.x1 + m, b.z0 - m, 0), vert(b.x1 + m, b.z1 + m, 0), vert(b.x0 - m, b.z1 + m, 0)];
+      if (b.y0 > 0.02) idx.push(i0[0], i0[2], i0[1], i0[0], i0[3], i0[2]);
+      for (let k = 0; k < 4; k++) { const n = (k + 1) % 4; idx.push(o0[k], i0[n], o0[n], o0[k], i0[k], i0[n]); }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(colr, 4)); g.setIndex(idx);
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+    m.renderOrder = 1; scene.add(m);
+  }
   return { lights };
 }

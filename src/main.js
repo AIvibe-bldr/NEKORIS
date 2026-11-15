@@ -2,7 +2,7 @@
 import * as THREE from '../vendor/three.module.min.js';
 import { RoomEnvironment } from '../vendor/RoomEnvironment.js';
 import { buildWorld, boxes, resolveCircle, groundAt, ceilingAt, rayT, los, mouseBlocked, mouseCovered, NavGrid, BOUNDS, WALL_H } from './world.js';
-import { buildCat, buildDog, buildMouse, buildPerson, buildVacuum, animateQuad, animateMouse, animatePerson, makeAlert } from './actors.js';
+import { buildCat, buildDog, buildMouse, buildPerson, buildVacuum, animateQuad, animateMouse, animatePerson, makeAlert, makeBlob, setFur } from './actors.js';
 
 const $ = (id) => document.getElementById(id);
 const TAU = Math.PI * 2;
@@ -17,18 +17,19 @@ const coarse = matchMedia('(pointer: coarse)').matches;
 let pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
 renderer.setPixelRatio(pixelRatio);
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.95;
-const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0c0a08);
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x8fc0f0);
 const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.4;
-const camera = new THREE.PerspectiveCamera(62, 1, 0.05, 60);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.38;
+const camera = new THREE.PerspectiveCamera(62, 1, 0.05, 120);
 
-scene.add(new THREE.HemisphereLight(0xfff3e0, 0x7a6450, 0.42));
-const sun = new THREE.DirectionalLight(0xfff0dc, 1.5);
-sun.position.set(2.5, 18, 3.5); sun.castShadow = true;
+scene.add(new THREE.HemisphereLight(0xfff3e0, 0x8a7460, 0.3));
+// 太陽は南西の空にあり、窓から室内に差し込む
+const sun = new THREE.DirectionalLight(0xfff0d8, 4.2);
+sun.position.set(-11, 15, 13); sun.castShadow = true;
 sun.shadow.mapSize.setScalar(coarse ? 1536 : 2048);
-Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 12, bottom: -12, near: 1, far: 30 });
-sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.015;
+Object.assign(sun.shadow.camera, { left: -14, right: 14, top: 14, bottom: -14, near: 2, far: 46 });
+sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.03;
 scene.add(sun, sun.target);
 
 buildWorld(scene);
@@ -43,12 +44,15 @@ function resize() {
 window.addEventListener('resize', resize); window.addEventListener('orientationchange', () => setTimeout(resize, 300)); resize();
 
 // 端末が重いときは解像度を自動で下げる
-let perfT = 0, perfN = 0;
+let perfT = 0, perfN = 0, furShown = true;
 function adaptQuality(rawDt) {
   perfT += rawDt; perfN++;
   if (perfN < 90) return;
   const avg = perfT / perfN; perfT = perfN = 0;
-  if (avg > 0.024 && pixelRatio > 0.75) { pixelRatio = Math.max(0.75, pixelRatio - 0.25); renderer.setPixelRatio(pixelRatio); resize(); }
+  if (avg < 0.024) return;
+  if (pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.25); renderer.setPixelRatio(pixelRatio); resize(); }
+  else if (furShown && avg > 0.03) { furShown = false; setFur(false); }          // それでも重ければ毛並みを省く
+  else if (pixelRatio > 0.75) { pixelRatio = 0.75; renderer.setPixelRatio(pixelRatio); resize(); }
 }
 
 // ───────────── 音 ─────────────
@@ -155,6 +159,7 @@ const CAT_H = 0.28, CAT_R = 0.16, SPAWN = { x: -7.4, z: 2 };
 const game = { state: 'title', level: 1, score: 0, lives: 5, time: 0, mice: [], dogs: [], people: [], vac: null, caught: 0 };
 const cat = { x: SPAWN.x, y: 0, z: SPAWN.z, vx: 0, vy: 0, vz: 0, yaw: Math.PI / 2, onGround: true, coyote: 0, stamina: 1, tired: false, inv: 0, stun: 0, dashing: false, model: buildCat() };
 scene.add(cat.model.group);
+const catBlob = makeBlob(0.3); catBlob.scale.set(0.8, 1.25, 1); scene.add(catBlob);
 
 function randFree(minCatDist = 0) {
   for (let i = 0; i < 200; i++) {
@@ -180,21 +185,24 @@ function startLevel(n) {
   for (let i = 0; i < nm; i++) {
     const p = randFree(5), model = buildMouse();
     game.mice.push({ ...p, yaw: rand(0, TAU), tx: p.x, tz: p.z, wt: 0, pause: rand(0, 2), fleeT: 0, fs: Math.min(4.2, 3.3 + n * 0.1), spd: 0, model });
+    const bl = makeBlob(0.11, 0.35); bl.position.y = 0.011; model.group.add(bl);
     scene.add(model.group);
   }
   const dogStart = [{ x: 8.9, z: 0.2 }, { x: 7.5, z: 5 }];
   for (let i = 0; i < nd; i++) {
     const model = buildDog(i), alert = makeAlert(); alert.position.y = 0.95; model.group.add(alert);
+    const bl = makeBlob(0.55); bl.scale.set(0.8, 1.3, 1); bl.position.y = 0.011; model.group.add(bl);
     game.dogs.push({ ...dogStart[i], yaw: Math.PI, r: 0.2, yLo: 0.15, yHi: 0.55, state: 'patrol', path: null, pi: 0, wait: 3 + i * 2, ignore: 0, lost: 0, repath: 0, barkT: 0, giveup: 0, timer: 0, lx: 0, lz: 0, spd: 0, cs: Math.min(5.2, 4.1 + n * 0.15), model, alert });
     scene.add(model.group);
   }
   const manStart = [{ x: 5, z: -1.5 }, { x: -6, z: 5 }, { x: 1.5, z: 5 }];
   for (let i = 0; i < np; i++) {
     const model = buildPerson(i + n), alert = makeAlert(); alert.position.y = 1.95; alert.scale.setScalar(0.32); model.group.add(alert);
+    const bl = makeBlob(0.42, 0.4); bl.position.y = 0.011; model.group.add(bl);
     game.people.push({ ...manStart[i], yaw: 0, r: 0.2, yLo: 0.15, yHi: 1.7, state: 'walk', path: null, pi: 0, wait: 1 + i, cool: 0, timer: 0, repath: 0, spd: 0, cs: Math.min(3.1, 2.5 + n * 0.08), model, alert });
     scene.add(model.group);
   }
-  game.vac = { x: 0, z: 2, dir: 0.4, mesh: buildVacuum(), turn: 0 }; scene.add(game.vac.mesh);
+  game.vac = { x: 0, z: 2, dir: 0.4, mesh: buildVacuum(), turn: 0 }; { const bl = makeBlob(0.26, 0.45); bl.position.y = 0.011; game.vac.mesh.add(bl); } scene.add(game.vac.mesh);
   game.state = 'play'; $('overlay').classList.add('hide');
   showMsg(`ステージ ${n}　ネズミを ${nm} 匹つかまえよう！`, 2.6);
 }
@@ -266,6 +274,8 @@ function updateCat(dt) {
 
   const hs = Math.hypot(c.vx, c.vz), g = c.model.group;
   g.position.set(c.x, c.y, c.z); g.rotation.y = c.yaw;
+  const gy = groundAt(c.x, c.z, 0.06, c.y);
+  catBlob.position.set(c.x, gy + 0.012, c.z); catBlob.rotation.z = c.yaw; catBlob.material.opacity = 0.45 * Math.max(0.25, 1 - (c.y - gy) * 0.8);
   g.visible = c.inv <= 0 || Math.floor(c.inv * 12) % 2 === 0;
   animateQuad(c.model, dt, hs, { run: hs > 4.2, air: !c.onGround, vy: c.vy });
 }
@@ -278,7 +288,7 @@ function updateCamera(dt, title) {
   }
   const tx = cat.x, ty = cat.y + 0.3, tz = cat.z, D = 1.7;
   const cp = Math.cos(camPitch), dx = -Math.sin(camYaw) * cp, dy = Math.sin(camPitch), dz = -Math.cos(camYaw) * cp;
-  const t = rayT(tx, tz, tx + dx * (D + 0.25), tz + dz * (D + 0.25), true);
+  const t = rayT(tx, tz, tx + dx * (D + 0.25), tz + dz * (D + 0.25), true, cat.y);
   const want = Math.max(0.3, Math.min(D, (D + 0.25) * t - 0.25));
   camDist = want < camDist ? want : camDist + (want - camDist) * Math.min(1, dt * 3);
   camera.position.set(tx + dx * camDist, Math.min(WALL_H - 0.15, ty + dy * camDist + (D - camDist) * 0.18), tz + dz * camDist);

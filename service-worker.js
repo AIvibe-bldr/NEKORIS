@@ -1,5 +1,5 @@
 // オフラインでも遊べるようにファイルをキャッシュする（通信できるときは常に最新版を取得）
-const CACHE = 'neko-chase-v1';
+const CACHE = 'neko-chase-v2';
 const FILES = ['./', 'index.html', 'manifest.json', 'src/main.js', 'src/world.js', 'src/actors.js',
   'vendor/three.module.min.js', 'vendor/three.core.min.js', 'vendor/RoomEnvironment.js', 'vendor/RoundedBoxGeometry.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-180.png'];

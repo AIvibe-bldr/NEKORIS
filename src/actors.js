@@ -8,9 +8,52 @@ const capZ = (r, len) => { const g = new THREE.CapsuleGeometry(r, len, 6, 16); g
 const capY = (r, len) => new THREE.CapsuleGeometry(r, len, 6, 14);
 
 function part(geo, mat, parent, x, y, z, sx = 1, sy = sx, sz = sx) {
+  const f = mat.userData.fur;
+  if (f) {                                   // 毛皮：拡縮を形状に焼き込み、毛の層（シェル）を重ねる
+    geo = (geo === SPH ? SPHZ : geo).clone().scale(sx, sy, sz);   // 球は縞が胴を一周する向きに
+    const n = geo.attributes.normal;
+    for (let i = 0; i < n.count; i++) {
+      const a = n.getX(i) / sx, b = n.getY(i) / sy, c = n.getZ(i) / sz, l = Math.hypot(a, b, c) || 1;
+      n.setXYZ(i, a / l, b / l, c / l);
+    }
+    sx = sy = sz = 1;
+  }
   const m = new THREE.Mesh(geo, mat);
   m.position.set(x, y, z); m.scale.set(sx, sy, sz); m.castShadow = true; parent.add(m);
+  if (f) {
+    const sh = new THREE.InstancedMesh(geo, f.shell, f.layers);
+    for (let i = 0; i < f.layers; i++) sh.setMatrixAt(i, IDENT);
+    sh.frustumCulled = false; sh.visible = furOn; shells.push(sh); m.add(sh);
+  }
   return m;
+}
+const IDENT = new THREE.Matrix4(), SPHZ = SPH.clone().rotateX(Math.PI / 2), shells = [];
+let furOn = true;
+/** 毛の層の表示切り替え（重い端末では消す） */
+export function setFur(on) { furOn = on; for (const s of shells) s.visible = on; }
+
+/** 毛皮マテリアル。毛の1本1本を、外側へ少しずつ膨らませた半透明の層で表現する */
+function furMat(map, color, len, density, layers = 12) {
+  const base = std(color, { map });
+  base.color.multiplyScalar(0.7);            // 地肌は暗め
+  const shell = std(color, { map, roughness: 1 });
+  shell.onBeforeCompile = (sd) => {
+    sd.uniforms.furLen = { value: len }; sd.uniforms.furLayers = { value: layers }; sd.uniforms.furDensity = { value: density };
+    sd.vertexShader = 'uniform float furLen; uniform float furLayers; varying vec3 vFurP; varying float vFurL;\n' + sd.vertexShader.replace('#include <begin_vertex>',
+      `#include <begin_vertex>
+       vFurL = (float(gl_InstanceID) + 1.0) / furLayers; vFurP = position;
+       transformed += normalize(objectNormal) * furLen * vFurL + vec3(0.0, -0.45, -0.75) * furLen * vFurL * vFurL;`);
+    sd.fragmentShader = 'uniform float furDensity; varying vec3 vFurP; varying float vFurL;\n' + sd.fragmentShader.replace('#include <map_fragment>',
+      `#include <map_fragment>
+       vec3 fp = vFurP * furDensity; vec3 fc = floor(fp); vec3 ff = fract(fp) - 0.5;
+       float rnd = fract(sin(dot(fc, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+       float hgt = 0.6 + 0.4 * rnd;
+       if (vFurL > hgt || length(ff) > 0.86 * (1.0 - 0.72 * vFurL / hgt)) discard;
+       diffuseColor.rgb *= mix(0.64, 1.15, vFurL) * (0.86 + 0.28 * rnd);`);
+  };
+  shell.customProgramCacheKey = () => 'fur-shell';
+  base.userData.fur = { shell, layers };
+  return base;
 }
 
 function furTex(base, stripe, seed, n = 16, alpha = 0.5) {
@@ -53,7 +96,7 @@ function buildQuad(p) {
     part(SPH, eyeM, head, s * hr * 0.42, hr * 0.16, hr * 0.74, hr * 0.21);
     part(SPH, black, head, s * hr * 0.45, hr * 0.16, hr * 0.9, hr * p.pupil[0], hr * p.pupil[1], hr * 0.07);
     if (p.ear === 'cat') {
-      const e = part(new THREE.ConeGeometry(hr * 0.4, hr * 0.8, 4), fur, head, s * hr * 0.55, hr * 0.9, -hr * 0.05);
+      const e = part(new THREE.ConeGeometry(hr * 0.4, hr * 0.8, 4), p.earFur, head, s * hr * 0.55, hr * 0.9, -hr * 0.05);
       e.rotation.set(-0.1, Math.PI / 4, -s * 0.28);
       const ei = part(new THREE.ConeGeometry(hr * 0.26, hr * 0.56, 4), std(0xe9a9a0), head, s * hr * 0.54, hr * 0.86, hr * 0.03);
       ei.rotation.copy(e.rotation); ei.castShadow = false;
@@ -88,21 +131,21 @@ function buildQuad(p) {
 }
 
 export function buildCat() {
-  const fur = std(0xffffff, { map: furTex('#d98a3d', '#8a4a18', 5, 9) });
-  return buildQuad({
+  const map = furTex('#d98a3d', '#8a4a18', 5, 9), fur = furMat(map, 0xffffff, 0.013, 520);
+  return buildQuad({ earFur: std(0xffffff, { map }),
     bodyR: 0.075, bodyLen: 0.24, legLen: 0.145, legR: 0.02, headR: 0.075, snout: 0.012, neckUp: 0.9,
-    tailLen: 0.34, tailR: 0.017, fur, belly: std(0xf6efe4), nose: 0xd98080, eye: 0xa8d848, pupil: [0.06, 0.17],
+    tailLen: 0.34, tailR: 0.017, fur, belly: furMat(null, 0xf6efe4, 0.009, 520, 8), nose: 0xd98080, eye: 0xa8d848, pupil: [0.06, 0.17],
     ear: 'cat', stride: 9, tailCurl: 0.11, tailBase: 0.45, collar: 0x2f6fd0,
   });
 }
 
 export function buildDog(i = 0) {
   const tones = [['#a8743e', '#6f4420', 0x5a3a20], ['#3a3a3c', '#151515', 0x1c1c1c]][i % 2];
-  const fur = std(0xffffff, { map: furTex(tones[0], tones[1], 12 + i, 4, 0.14) });
+  const fur = furMat(furTex(tones[0], tones[1], 12 + i, 4, 0.14), 0xffffff, 0.02, 330);
   return buildQuad({
     bodyR: 0.15, bodyLen: 0.48, legLen: 0.33, legR: 0.04, headR: 0.12, snout: 0.1, neckUp: 1.25,
-    tailLen: 0.36, tailR: 0.028, fur, belly: std(0xead9bf), nose: 0x111111, eye: 0x3a2412, pupil: [0.13, 0.13],
-    ear: 'dog', earMat: std(tones[2]), stride: 4.6, tailCurl: 0.1, tailBase: 0.8, collar: 0xb5302a,
+    tailLen: 0.36, tailR: 0.028, fur, belly: furMat(null, 0xead9bf, 0.014, 330, 8), nose: 0x111111, eye: 0x3a2412, pupil: [0.13, 0.13],
+    ear: 'dog', earMat: furMat(null, tones[2], 0.012, 330, 8), stride: 4.6, tailCurl: 0.1, tailBase: 0.8, collar: 0xb5302a,
   });
 }
 
@@ -239,4 +282,18 @@ export function makeAlert() {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, toneMapped: false }));
   s.scale.setScalar(0.28); s.visible = false; s.renderOrder = 10;
   return s;
+}
+
+/** 足元の丸い影 */
+let blobTex = null;
+export function makeBlob(r, opacity = 0.42) {
+  if (!blobTex) {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.55, 'rgba(0,0,0,.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64); blobTex = new THREE.CanvasTexture(c);
+  }
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(r * 2, r * 2), new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, opacity, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2; m.renderOrder = 2;
+  return m;
 }
