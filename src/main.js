@@ -1,8 +1,8 @@
 // ねこハウスチェイス — ゲーム本体
 import * as THREE from '../vendor/three.module.min.js';
 import { RoomEnvironment } from '../vendor/RoomEnvironment.js';
-import { buildWorld, boxes, resolveCircle, groundAt, ceilingAt, rayT, los, mouseBlocked, mouseCovered, NavGrid, BOUNDS, WALL_H } from './world.js';
-import { buildCat, buildDog, buildMouse, buildPerson, buildVacuum, animateQuad, animateMouse, animatePerson, makeAlert, makeBlob, setFur } from './actors.js';
+import { buildWorld, loadAssets, sightClear, boxes, resolveCircle, groundAt, ceilingAt, rayT, los, mouseBlocked, mouseCovered, NavGrid, BOUNDS, WALL_H } from './world.js';
+import { buildCat, buildDog, buildMouse, buildPerson, buildVacuum, animateQuad, animateMouse, animatePerson, makeAlert, makeBlob, setFur, buildMouseFrom, setCloth } from './actors.js';
 
 const $ = (id) => document.getElementById(id);
 const TAU = Math.PI * 2;
@@ -183,7 +183,7 @@ function startLevel(n) {
   game.level = n; game.time = 0; game.caught = 0;
   const nm = Math.min(12, 4 + n), nd = n >= 4 ? 2 : 1, np = n >= 5 ? 3 : n >= 2 ? 2 : 1;
   for (let i = 0; i < nm; i++) {
-    const p = randFree(5), model = buildMouse();
+    const p = randFree(5), model = ratProto ? buildMouseFrom(ratProto) : buildMouse();
     game.mice.push({ ...p, yaw: rand(0, TAU), tx: p.x, tz: p.z, wt: 0, pause: rand(0, 2), fleeT: 0, fs: Math.min(4.2, 3.3 + n * 0.1), spd: 0, model });
     const bl = makeBlob(0.11, 0.35); bl.position.y = 0.011; model.group.add(bl);
     scene.add(model.group);
@@ -192,14 +192,14 @@ function startLevel(n) {
   for (let i = 0; i < nd; i++) {
     const model = buildDog(i), alert = makeAlert(); alert.position.y = 0.95; model.group.add(alert);
     const bl = makeBlob(0.55); bl.scale.set(0.8, 1.3, 1); bl.position.y = 0.011; model.group.add(bl);
-    game.dogs.push({ ...dogStart[i], yaw: Math.PI, r: 0.2, yLo: 0.15, yHi: 0.55, state: 'patrol', path: null, pi: 0, wait: 3 + i * 2, ignore: 0, lost: 0, repath: 0, barkT: 0, giveup: 0, timer: 0, lx: 0, lz: 0, spd: 0, cs: Math.min(5.2, 4.1 + n * 0.15), model, alert });
+    game.dogs.push({ ...dogStart[i], yaw: Math.PI, r: 0.2, yLo: 0.15, yHi: 0.55, eye: 0.5, state: 'patrol', path: null, pi: 0, wait: 3 + i * 2, ignore: 0, lost: 0, repath: 0, barkT: 0, giveup: 0, timer: 0, lx: 0, lz: 0, spd: 0, cs: Math.min(5.2, 4.1 + n * 0.15), model, alert });
     scene.add(model.group);
   }
   const manStart = [{ x: 5, z: -1.5 }, { x: -6, z: 5 }, { x: 1.5, z: 5 }];
   for (let i = 0; i < np; i++) {
     const model = buildPerson(i + n), alert = makeAlert(); alert.position.y = 1.95; alert.scale.setScalar(0.32); model.group.add(alert);
     const bl = makeBlob(0.42, 0.4); bl.position.y = 0.011; model.group.add(bl);
-    game.people.push({ ...manStart[i], yaw: 0, r: 0.2, yLo: 0.15, yHi: 1.7, state: 'walk', path: null, pi: 0, wait: 1 + i, cool: 0, timer: 0, repath: 0, spd: 0, cs: Math.min(3.1, 2.5 + n * 0.08), model, alert });
+    game.people.push({ ...manStart[i], yaw: 0, r: 0.2, yLo: 0.15, yHi: 1.7, eye: 1.55, lost: 0, lx: 0, lz: 0, state: 'walk', path: null, pi: 0, wait: 1 + i, cool: 0, timer: 0, repath: 0, spd: 0, cs: Math.min(3.1, 2.5 + n * 0.08), model, alert });
     scene.add(model.group);
   }
   game.vac = { x: 0, z: 2, dir: 0.4, mesh: buildVacuum(), turn: 0 }; { const bl = makeBlob(0.26, 0.45); bl.position.y = 0.011; game.vac.mesh.add(bl); } scene.add(game.vac.mesh);
@@ -348,7 +348,8 @@ function canSee(a, range, near) {
   const dx = cat.x - a.x, dz = cat.z - a.z, dist = Math.hypot(dx, dz);
   if (cat.inv > 0 || dist > range) return false;
   const front = Math.cos(angDiff(Math.atan2(dx, dz), a.yaw)) > -0.15;
-  return (front || dist < near) && los(a.x, a.z, cat.x, cat.z);
+  // 間に壁や家具があれば見えない（目の高さからネコの体までを立体的に判定）
+  return (front || dist < near) && sightClear(a.x, a.eye, a.z, cat.x, cat.y + 0.15, cat.z);
 }
 
 function updateDog(d, dt) {
@@ -374,24 +375,26 @@ function updateDog(d, dt) {
   }
   d.model.group.position.set(d.x, 0, d.z); d.model.group.rotation.y = d.yaw;
   animateQuad(d.model, dt, d.spd, { run: d.spd > 3, wag, alert: d.state !== 'patrol' });
-  return cat.inv <= 0 && dist < 0.6 && cat.y < 0.6;
+  return d.state === 'chase' && cat.inv <= 0 && dist < 0.6 && cat.y < 0.6;
 }
 
 function updatePerson(p, dt) {
   const dx = cat.x - p.x, dz = cat.z - p.z, dist = Math.hypot(dx, dz);
   p.cool = Math.max(0, p.cool - dt);
   if (p.state === 'walk') {
-    if (p.cool <= 0 && canSee(p, 4.2, 1.2)) { p.state = 'chase'; p.timer = 5; p.repath = 0; p.alert.visible = true; sfx.hey(); showMsg('「こらっ、待ちなさい！」', 1.4); }
+    if (p.cool <= 0 && canSee(p, 4.2, 1.2)) { p.state = 'chase'; p.timer = 6; p.repath = 0; p.lost = 0; p.lx = cat.x; p.lz = cat.z; p.alert.visible = true; sfx.hey(); showMsg('「こらっ、待ちなさい！」', 1.4); }
     else if (follow(p, navMan, 1.25, dt)) { p.wait -= dt; if (p.wait <= 0) { const t = randFree(); setPath(p, navMan, t.x, t.z); p.wait = rand(1.5, 5); } }
   } else {
     p.timer -= dt;
-    if (p.timer <= 0 || cat.inv > 0) { p.state = 'walk'; p.cool = 6; p.alert.visible = false; p.path = null; p.wait = 1; }
-    else if (dist < 1.3 && los(p.x, p.z, cat.x, cat.z)) { if (dist > 0.3) steer(p, dx / dist, dz / dist, p.cs, dt); }
-    else { p.repath -= dt; if (p.repath <= 0) { setPath(p, navMan, cat.x, cat.z); p.repath = 0.35; } follow(p, navMan, p.cs, dt); }
+    const sees = canSee(p, 7, 1.2);
+    if (sees) { p.lost = 0; p.lx = cat.x; p.lz = cat.z; } else p.lost += dt;      // 見失ったら最後に見た場所まで行ってあきらめる
+    if (p.timer <= 0 || cat.inv > 0 || p.lost > 2) { p.state = 'walk'; p.cool = 6; p.alert.visible = false; p.path = null; p.wait = 1; }
+    else if (sees && dist < 1.3 && los(p.x, p.z, cat.x, cat.z)) { if (dist > 0.3) steer(p, dx / dist, dz / dist, p.cs, dt); }
+    else { p.repath -= dt; if (p.repath <= 0) { setPath(p, navMan, p.lx, p.lz); p.repath = 0.35; } follow(p, navMan, p.cs, dt); }
   }
   p.model.group.position.set(p.x, 0, p.z); p.model.group.rotation.y = p.yaw;
   animatePerson(p.model, dt, p.spd, p.state === 'chase');
-  return cat.inv <= 0 && dist < 0.48 && cat.y < 1.3;
+  return p.state === 'chase' && cat.inv <= 0 && dist < 0.48 && cat.y < 1.3;
 }
 
 function updateVacuum(v, dt) {
@@ -450,8 +453,17 @@ const HELP = `<p>おうちの中でネズミをぜんぶつかまえよう。<br
 <li>🎥 視点：${isTouch ? '画面右をドラッグ（ダッシュ中はボタンから指をずらす）' : 'マウスドラッグ / <kbd>Q</kbd><kbd>E</kbd>'}</li>
 <li>🐕 イヌはテーブルや棚の上までは届かない。あきらめるまで待とう</li>
 <li>🧍 人は手が届くので、高い所でも油断しないで</li>
+<li>🙈 壁や家具のかげに隠れれば、イヌにも人にも見つからない</li>
 <li>🐭 ベッドやソファの下に逃げ込んだネズミは、出てくるまで手が出せない</li></ul>`;
 $('oBody').innerHTML = HELP;
+// 実写素材の読み込み（終わるまでスタートを待つ。失敗しても簡易表示で遊べる）
+let ratProto = null;
+{
+  const btn = $('oBtn'); btn.disabled = true; btn.textContent = '読み込み中… 0%';
+  loadAssets(scene, (p) => { btn.textContent = `読み込み中… ${Math.round(p * 100)}%`; })
+    .then((a) => { ratProto = a.rat; setCloth(a.cloth); }).catch(() => {})
+    .then(() => { btn.disabled = false; btn.textContent = 'スタート'; window.__ready = true; });
+}
 $('oBtn').addEventListener('click', () => {
   audio();
   if (game.state === 'clear') startLevel(game.level + 1);

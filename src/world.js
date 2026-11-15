@@ -1,6 +1,7 @@
 // 家の構築（壁・床・家具）、当たり判定、経路探索
 import * as THREE from '../vendor/three.module.min.js';
 import { RoundedBoxGeometry } from '../vendor/RoundedBoxGeometry.js';
+import { GLTFLoader } from '../vendor/GLTFLoader.js';
 
 export const BOUNDS = { x0: -10, x1: 10, z0: -7, z1: 7 };
 export const WALL_H = 2.7;
@@ -66,6 +67,7 @@ export function ceilingAt(x, z, r, yTop) {
 
 /** カメラだけが避ける物（観葉植物の葉など） */
 export const camBoxes = [];
+const slots = [], texJobs = [];
 function segBox(b, ax, az, dx, dz, best) {
   let t0 = 0, t1 = best;
   if (Math.abs(dx) < 1e-9) { if (ax < b.x0 || ax > b.x1) return best; }
@@ -96,6 +98,26 @@ export function rayT(ax, az, bx, bz, cam = false, catY = 0) {
   return best;
 }
 export const los = (ax, az, bx, bz) => rayT(ax, az, bx, bz) >= 1;
+
+/** 立体的な見通し：目(a)からネコ(b)までの間に壁や家具がなければ true */
+export function sightClear(ax, ay, az, bx, by, bz) {
+  const d = [bx - ax, by - ay, bz - az], o = [ax, ay, az], e = 0.02;
+  for (let i = 0; i < boxes.length; i++) {
+    const b = boxes[i], lo = [b.x0 + e, b.y0 + e, b.z0 + e], hi = [b.x1 - e, b.y1 - e, b.z1 - e];
+    let t0 = 0, t1 = 1, hit = true;
+    for (let k = 0; k < 3 && hit; k++) {
+      if (Math.abs(d[k]) < 1e-9) { if (o[k] < lo[k] || o[k] > hi[k]) hit = false; }
+      else {
+        let u = (lo[k] - o[k]) / d[k], v = (hi[k] - o[k]) / d[k];
+        if (u > v) { const t = u; u = v; v = t; }
+        if (u > t0) t0 = u; if (v < t1) t1 = v;
+        if (t0 > t1) hit = false;
+      }
+    }
+    if (hit) return false;
+  }
+  return true;
+}
 
 /** ネズミが通れない場所か（床まで届いている物の中） */
 export function mouseBlocked(x, z) {
@@ -337,7 +359,31 @@ const artTex = (seed) => tex(128, 128, (g, w) => {
 // ───────────── 家の構築 ─────────────
 
 export function buildWorld(scene) {
-  boxes.length = 0; camBoxes.length = 0;
+  boxes.length = 0; camBoxes.length = 0; slots.length = 0; texJobs.length = 0;
+  let parent = scene;
+  /** 実写スキャンの3Dモデルに差し替える家具。fn は読み込み前・失敗時に表示する簡易版を作る */
+  const piece = (id, box, rot, fn) => {
+    const g = new THREE.Group(); scene.add(g); parent = g; fn(); parent = scene;
+    for (const b of (Array.isArray(box[0]) ? box : [box])) slots.push({ id, box: b, rot, fallback: g });
+  };
+  /** 実写テクスチャ（読み込めたら差し替える） */
+  const photoTex = (mat, name, rx, ry, withColor) => {
+    const job = (suffix, apply, srgb) => texJobs.push({ url: `assets/textures/${name}/${name}_${suffix}_1k.jpg`, apply: (t) => {
+      t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rx, ry); t.anisotropy = 8; if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+      apply(t); mat.needsUpdate = true; } });
+    if (withColor) job('diff', (t) => { mat.map = t; mat.color.set(0xffffff); }, true);
+    job('nor_gl', (t) => { mat.normalMap = t; const k = withColor ? 1 : 0.35; mat.normalScale = new THREE.Vector2(k, k); });
+    job('arm', (t) => { mat.roughnessMap = t; mat.aoMap = t; mat.roughness = 1; });
+  };
+  /** 箱の面に、大きさによらず同じ縮尺で模様がのるようにUVを振り直す */
+  const worldUV = (m) => {
+    const g = m.geometry, P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv;
+    for (let k = 0; k < P.count; k++) {
+      const x = P.getX(k) + m.position.x, y = P.getY(k) + m.position.y, z = P.getZ(k) + m.position.z;
+      if (Math.abs(N.getX(k)) > 0.5) U.setXY(k, z / 2, y / 2); else if (Math.abs(N.getZ(k)) > 0.5) U.setXY(k, x / 2, y / 2); else U.setXY(k, x / 2, z / 2);
+    }
+    return m;
+  };
   const std = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...o });
   const M = {
     wall: std(0xefe6d6, { roughness: 0.95 }), base: std(0xfbfaf6, { roughness: 0.6 }),
@@ -362,25 +408,25 @@ export function buildWorld(scene) {
     const m = new THREE.Mesh(geo, mat);
     m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
     m.castShadow = o.cast !== false; m.receiveShadow = true;
-    scene.add(m);
+    parent.add(m);
     if (o.col !== false) col(x0, z0, x1, z1, y0, y1);
     return m;
   }
   const V = (x0, z0, x1, z1, y0, y1, mat, o = {}) => B(x0, z0, x1, z1, y0, y1, mat, { ...o, col: false });
   function cyl(x, z, r, y0, y1, mat, r2 = r, cast = true) {
     const m = new THREE.Mesh(new THREE.CylinderGeometry(r2, r, y1 - y0, 20), mat);
-    m.position.set(x, (y0 + y1) / 2, z); m.castShadow = cast; m.receiveShadow = true; scene.add(m); return m;
+    m.position.set(x, (y0 + y1) / 2, z); m.castShadow = cast; m.receiveShadow = true; parent.add(m); return m;
   }
   function plane(x0, z0, x1, z1, y, mat) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, z1 - z0), mat);
-    m.rotation.x = -Math.PI / 2; m.position.set((x0 + x1) / 2, y, (z0 + z1) / 2); m.receiveShadow = true; scene.add(m); return m;
+    m.rotation.x = -Math.PI / 2; m.position.set((x0 + x1) / 2, y, (z0 + z1) / 2); m.receiveShadow = true; parent.add(m); return m;
   }
   /** 壁に貼る板（axis: 'x'なら±x向き） */
   function panel(x, y, z, w, h, facing, mat) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
     m.position.set(x, y, z);
     m.rotation.y = { '+x': Math.PI / 2, '-x': -Math.PI / 2, '+z': 0, '-z': Math.PI }[facing];
-    scene.add(m); return m;
+    parent.add(m); return m;
   }
   function legs(x0, z0, x1, z1, h, t, mat) {
     for (const [x, z] of [[x0, z0], [x1 - t, z0], [x0, z1 - t], [x1 - t, z1 - t]]) V(x, z, x + t, z + t, 0, h, mat);
@@ -388,18 +434,19 @@ export function buildWorld(scene) {
 
   // 床・天井
   const floorMat = (t, rough, ns) => std(0xffffff, { map: t, normalMap: normalFrom(t, 2.5), normalScale: new THREE.Vector2(ns, ns), roughness: rough });
-  plane(-10, -7, 10, 7, 0, floorMat(woodTex(10, 7), 0.5, 0.5));
-  plane(0.1, -7, 10, 0.9, 0.003, floorMat(tileTex(9.9, 7.9), 0.32, 0.8));
-  plane(5.1, 3.1, 10, 7, 0.003, floorMat(tileTex(4.9, 3.9), 0.32, 0.8));
+  const woodF = floorMat(woodTex(10, 7), 0.5, 0.5), tileA = floorMat(tileTex(9.9, 7.9), 0.32, 0.8), tileB = floorMat(tileTex(4.9, 3.9), 0.32, 0.8);
+  plane(-10, -7, 10, 7, 0, woodF); plane(0.1, -7, 10, 0.9, 0.003, tileA); plane(5.1, 3.1, 10, 7, 0.003, tileB);
+  photoTex(woodF, 'laminate_floor_02', 12, 8.4, true); photoTex(tileA, 'floor_tiles_06', 6.6, 5.27, true); photoTex(tileB, 'floor_tiles_06', 3.27, 2.6, true);
+  photoTex(M.wall, 'painted_plaster_wall', 1, 1, false);
   V(-10.2, -7.2, 10.2, 7.2, WALL_H, WALL_H + 0.15, M.ceil);          // 天井（日光をさえぎる）
 
   // 壁
   const wall = (x0, z0, x1, z1) => {
-    B(x0, z0, x1, z1, 0, WALL_H, M.wall);
+    worldUV(B(x0, z0, x1, z1, 0, WALL_H, M.wall));
     V(x0 - 0.012, z0 - 0.012, x1 + 0.012, z1 + 0.012, 0, 0.09, M.base, { cast: false });
   };
   const lintel = (x0, z0, x1, z1) => {
-    B(x0, z0, x1, z1, 2.08, WALL_H, M.wall);
+    worldUV(B(x0, z0, x1, z1, 2.08, WALL_H, M.wall));
     const horiz = x1 - x0 > z1 - z0, e = 0.03;
     if (horiz) { V(x0 - 0.05, z0 - e, x0, z1 + e, 0, 2.08, M.base); V(x1, z0 - e, x1 + 0.05, z1 + e, 0, 2.08, M.base); V(x0 - 0.05, z0 - e, x1 + 0.05, z1 + e, 2.08, 2.14, M.base); }
     else { V(x0 - e, z0 - 0.05, x1 + e, z0, 0, 2.08, M.base); V(x0 - e, z1, x1 + e, z1 + 0.05, 0, 2.08, M.base); V(x0 - e, z0 - 0.05, x1 + e, z1 + 0.05, 2.08, 2.14, M.base); }
@@ -407,7 +454,7 @@ export function buildWorld(scene) {
   // 外壁（窓は本当に開いていて、日光が差し込む）
   const glass = std(0xcfe6ff, { transparent: true, opacity: 0.1, roughness: 0.03, depthWrite: false });
   const outer = (alongX, a0, a1, c0, c1, wins) => {
-    const P = (u0, u1, y0, y1, mat, o) => (alongX ? V(u0, c0, u1, c1, y0, y1, mat, o) : V(c0, u0, c1, u1, y0, y1, mat, o));
+    const P = (u0, u1, y0, y1, mat, o) => worldUV(alongX ? V(u0, c0, u1, c1, y0, y1, mat, o) : V(c0, u0, c1, u1, y0, y1, mat, o));
     let u = a0;
     for (const [c, w] of wins) {
       const w0 = c - w / 2, w1 = c + w / 2;
@@ -415,7 +462,7 @@ export function buildWorld(scene) {
       for (const [f0, f1, y0, y1] of [[w0, w0 + 0.05, 0.9, 2.1], [w1 - 0.05, w1, 0.9, 2.1], [w0, w1, 2.05, 2.1], [w0, w1, 0.9, 0.95], [c - 0.02, c + 0.02, 0.95, 2.05], [w0, w1, 1.48, 1.52]]) P(f0, f1, y0, y1, M.base, { cast: false });
       const mid = (c0 + c1) / 2, s0 = Math.min(mid, mid + (c0 + c1 > 0 ? -1 : 1) * 0.16);   // 室内側に張り出す窓台
       if (alongX) V(w0 - 0.05, s0, w1 + 0.05, s0 + 0.16, 0.86, 0.9, M.base, { cast: false }); else V(s0, w0 - 0.05, s0 + 0.16, w1 + 0.05, 0.86, 0.9, M.base, { cast: false });
-      const gm = new THREE.Mesh(new THREE.PlaneGeometry(w, 1.2), glass); gm.position.set(alongX ? c : mid, 1.5, alongX ? mid : c); if (!alongX) gm.rotation.y = Math.PI / 2; gm.material.side = THREE.DoubleSide; scene.add(gm);
+      const gm = new THREE.Mesh(new THREE.PlaneGeometry(w, 1.2), glass); gm.position.set(alongX ? c : mid, 1.5, alongX ? mid : c); if (!alongX) gm.rotation.y = Math.PI / 2; gm.material.side = THREE.DoubleSide; parent.add(gm);
       u = w1;
     }
     P(u, a1, 0, WALL_H, M.wall);
@@ -436,37 +483,27 @@ export function buildWorld(scene) {
   wall(-2.1, 3.1, -1.9, 7); wall(4.9, 3.1, 5.1, 7);
 
   // 窓・絵・照明器具
-  // 屋外（空・庭・木）
+  // 屋外：庭の全天球写真（読み込むまでは空色のグラデーション）
   {
     const c = document.createElement('canvas'); c.width = 4; c.height = 256;
     const g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 256);
-    gr.addColorStop(0, '#2f6fc4'); gr.addColorStop(0.42, '#8fc0f0'); gr.addColorStop(0.5, '#e6f1fb'); gr.addColorStop(0.51, '#9db59a'); gr.addColorStop(1, '#6f8f66');
+    gr.addColorStop(0, '#2f6fc4'); gr.addColorStop(0.45, '#8fc0f0'); gr.addColorStop(0.5, '#e6f1fb'); gr.addColorStop(0.51, '#7fa85c'); gr.addColorStop(1, '#5f8f46');
     g.fillStyle = gr; g.fillRect(0, 0, 4, 256);
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-    const sky = new THREE.Mesh(new THREE.SphereGeometry(52, 24, 16), new THREE.MeshBasicMaterial({ map: t, side: THREE.BackSide, toneMapped: false, color: 0xffffff }));
-    scene.add(sky);
-    const lawn = new THREE.Mesh(new THREE.CircleGeometry(52, 32), std(0x6f9a4c, { roughness: 1 }));
-    lawn.rotation.x = -Math.PI / 2; lawn.position.y = -0.03; lawn.receiveShadow = true; scene.add(lawn);
-    const R = rng(77), leafM = [std(0x4f8a3c, { roughness: 1 }), std(0x3f7434, { roughness: 1 }), std(0x5f9a48, { roughness: 1 })], trunk = std(0x5a4030, { roughness: 1 });
-    for (let i = 0; i < 26; i++) {
-      const a = (i / 26) * 6.283 + R() * 0.2, d = 15 + R() * 9, x = Math.cos(a) * d * 1.25, z = Math.sin(a) * d, hgt = 2.5 + R() * 3;
-      cyl(x, z, 0.18, 0, hgt * 0.5, trunk, 0.12, false);
-      for (let k = 0; k < 3; k++) {
-        const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), leafM[(i + k) % 3]);
-        m.position.set(x + R() - 0.5, hgt * (0.55 + k * 0.2), z + R() - 0.5); m.scale.set(1.3 + R(), 1.1 + R() * 0.8, 1.3 + R()); scene.add(m);
-      }
-    }
-    for (const [x0, z0, x1, z1] of [[-14, -11.5, 14, -11.2], [-14, 11.2, 14, 11.5], [-14.3, -11.5, -14, 11.5], [14, -11.5, 14.3, 11.5]]) V(x0, z0, x1, z1, 0, 1.3, std(0x4a7a3a, { roughness: 1 }), { cast: false });
+    const mat = new THREE.MeshBasicMaterial({ map: t, side: THREE.BackSide, toneMapped: false });
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(55, 48, 24), mat);
+    sky.position.y = 1.6; sky.scale.x = -1; sky.rotation.y = 2.2; parent.add(sky);
+    texJobs.push({ url: 'assets/sky/suburban_garden.jpg', apply: (tx) => { tx.colorSpace = THREE.SRGBColorSpace; mat.map = tx; mat.color.setScalar(1.25); mat.needsUpdate = true; } });
   }
   // 窓からの空の明かり（補助光）
-  for (const [x, z] of [[-8.7, -1.2], [8.7, -3.5], [-6, 5.9], [1.3, 5.9]]) { const pl = new THREE.PointLight(0xd6e6ff, 5, 7.5, 1.7); pl.position.set(x, 1.6, z); scene.add(pl); }
+  for (const [x, z] of [[-8.7, -1.2], [8.7, -3.5], [-6, 5.9], [1.3, 5.9]]) { const pl = new THREE.PointLight(0xd6e6ff, 5, 7.5, 1.7); pl.position.set(x, 1.6, z); parent.add(pl); }
   const art = (x, y, z, facing, w, h, seed) => panel(x, y, z, w, h, facing, std(0xffffff, { map: artTex(seed), roughness: 0.6 }));
   art(-2.5, 1.6, 1.105, '+z', 0.9, 0.6, 5); art(3, 1.6, 1.105, '+z', 0.6, 0.8, 9); art(-3.5, 1.6, 0.895, '-z', 1.1, 0.7, 21);
   art(-9.995, 1.7, 5, '+x', 0.8, 0.5, 33); art(-1.895, 1.6, 5, '+x', 0.7, 0.9, 41); art(0.105, 1.7, -5.6, '+x', 0.6, 0.6, 51);
   const lights = [[-5, -3], [5, -3], [-5, 2], [5, 2], [-6, 5], [1.5, 5], [7.5, 5]];
   for (const [x, z] of lights) cyl(x, z, 0.24, WALL_H - 0.06, WALL_H, M.lamp, 0.24, false);
   for (const [x, z, i] of [[-5, -3, 9], [5, -3, 9], [-6, 5, 6], [1.5, 5, 6]]) {
-    const pl = new THREE.PointLight(0xffe6bf, i, 11, 1.6); pl.position.set(x, 2.35, z); scene.add(pl);
+    const pl = new THREE.PointLight(0xffe6bf, i, 11, 1.6); pl.position.set(x, 2.35, z); parent.add(pl);
   }
 
   // ── リビング ──
@@ -475,6 +512,7 @@ export function buildWorld(scene) {
   V(-6.2, -6.82, -5.8, -6.66, 0.5, 0.56, M.black);
   B(-6.75, -6.78, -5.25, -6.71, 0.56, 1.42, M.black);                               // テレビ
   panel(-6, 0.99, -6.705, 1.42, 0.78, '+z', M.glass);
+  piece('sofa_02', [-7.25, -2.45, -4.75, -1.38, 0, 0.95], Math.PI, () => {
   V(-7.2, -2.4, -4.8, -1.4, 0.12, 0.34, M.sofa, { r: 0.05 });                       // ソファ
   V(-6.93, -2.38, -6.02, -1.68, 0.33, 0.5, M.sofa, { r: 0.07 }); V(-5.98, -2.38, -5.07, -1.68, 0.33, 0.5, M.sofa, { r: 0.07 });
   col(-7.2, -2.4, -4.8, -1.4, 0.12, 0.5);
@@ -482,16 +520,21 @@ export function buildWorld(scene) {
   B(-7.2, -2.4, -6.95, -1.7, 0.34, 0.64, M.sofa, { r: 0.08 }); B(-5.05, -2.4, -4.8, -1.7, 0.34, 0.64, M.sofa, { r: 0.08 });
   V(-6.7, -1.95, -6.3, -1.72, 0.5, 0.86, M.cushion, { r: 0.09 });
   legs(-7.15, -2.35, -4.85, -1.45, 0.12, 0.07, M.woodDark);
+  });
+  piece('modern_coffee_table_01', [-6.6, -4.45, -5.4, -3.65, 0, 0.41], Math.PI / 2, () => {
   B(-6.6, -4.45, -5.4, -3.65, 0.36, 0.41, M.wood, { r: 0.015 });                    // ローテーブル
   legs(-6.55, -4.4, -5.45, -3.7, 0.36, 0.06, M.woodDark);
+  });
   cyl(-5.75, -4.0, 0.05, 0.41, 0.52, M.white);                                       // マグカップ
   B(-9.98, -6.3, -9.6, -4.3, 0, 1.9, M.woodDark);                                   // 本棚
   panel(-9.595, 0.95, -5.3, 2, 1.9, '+x', std(0xffffff, { map: booksTex(4), roughness: 0.8 }));
+  piece('ArmChair_01', [-9.55, -3.62, -8.55, -2.68, 0, 1.1], Math.PI / 2, () => {
   V(-9.5, -3.6, -8.6, -2.7, 0.12, 0.44, M.sofa2, { r: 0.08 }); col(-9.5, -3.6, -8.6, -2.7, 0.12, 0.44);   // 一人掛け
   B(-9.5, -3.6, -9.28, -2.7, 0.3, 0.9, M.sofa2, { r: 0.08 });
   B(-9.3, -3.6, -8.6, -3.42, 0.3, 0.62, M.sofa2, { r: 0.07 }); B(-9.3, -2.88, -8.6, -2.7, 0.3, 0.62, M.sofa2, { r: 0.07 });
+  });
   // 観葉植物
-  const plant = (x, z, s = 1) => {
+  const plant = (x, z, s = 1) => piece('potted_plant_02', [x - 0.42 * s, z - 0.4 * s, x + 0.42 * s, z + 0.4 * s, 0, 1.0 * s], 0, () => {
     cyl(x, z, 0.17 * s, 0, 0.4 * s, M.pot, 0.23 * s); col(x - 0.2 * s, z - 0.2 * s, x + 0.2 * s, z + 0.2 * s, 0, 0.42 * s);
     cyl(x, z, 0.025, 0.4 * s, 1.0 * s, M.woodDark);
     camBoxes.push({ x0: x - 0.4 * s, x1: x + 0.4 * s, z0: z - 0.4 * s, z1: z + 0.4 * s });
@@ -501,14 +544,14 @@ export function buildWorld(scene) {
       const a = R() * 6.28, rr = 0.1 + R() * 0.22;
       l.position.set(x + Math.cos(a) * rr * s, (0.75 + R() * 0.7) * s, z + Math.sin(a) * rr * s);
       l.scale.set((0.1 + R() * 0.1) * s, (0.2 + R() * 0.14) * s, (0.1 + R() * 0.1) * s);
-      l.rotation.set(R() - 0.5, R() * 3, R() - 0.5); l.castShadow = true; scene.add(l);
+      l.rotation.set(R() - 0.5, R() * 3, R() - 0.5); l.castShadow = true; parent.add(l);
     }
-  };
-  plant(-0.7, -6.4); plant(-9.5, 6.55, 0.8); plant(4.4, 3.6, 0.9);
+  });
+  plant(-0.7, -6.4, 1.2); plant(-9.5, 6.55, 0.9); plant(4.4, 3.6, 1.0);
   // フロアランプ
   cyl(-4.3, -1.6, 0.16, 0, 0.03, M.steelDark); cyl(-4.3, -1.6, 0.015, 0.03, 1.5, M.steelDark);
   cyl(-4.3, -1.6, 0.2, 1.42, 1.72, M.lamp, 0.13, false); col(-4.36, -1.66, -4.24, -1.54, 0, 1.5);
-  const fl = new THREE.PointLight(0xffc98a, 3, 6, 1.8); fl.position.set(-4.3, 1.3, -1.9); scene.add(fl);
+  const fl = new THREE.PointLight(0xffc98a, 3, 6, 1.8); fl.position.set(-4.3, 1.3, -1.9); parent.add(fl);
   // キャットタワー
   B(-9.85, -0.4, -8.75, 0.75, 0, 0.06, M.carpet);
   for (const [x, z, h] of [[-9.5, 0.4, 1.5], [-9.05, 0.45, 1.0], [-9.5, -0.1, 0.5]]) { cyl(x, z, 0.06, 0.06, h, M.rope); col(x - 0.06, z - 0.06, x + 0.06, z + 0.06, 0, h); }
@@ -532,18 +575,19 @@ export function buildWorld(scene) {
   V(4.95, -4.45, 7.05, -3.45, 0.86, 0.9, M.woodLight, { r: 0.012 }); col(4.95, -4.45, 7.05, -3.45, 0, 0.9);
   cyl(6, -3.95, 0.16, 0.9, 0.97, M.wicker, 0.2);
   for (const [dx, dz, c] of [[0, 0, 0xd8472b], [0.08, 0.05, 0xe8a530], [-0.07, 0.06, 0x7fae3a]]) {
-    const f = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 10), std(c, { roughness: 0.5 })); f.position.set(6 + dx, 1.0, -3.95 + dz); f.castShadow = true; scene.add(f);
+    const f = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 10), std(c, { roughness: 0.5 })); f.position.set(6 + dx, 1.0, -3.95 + dz); f.castShadow = true; parent.add(f);
   }
-  B(2.2, -2.2, 4.4, -1.0, 0.7, 0.75, M.wood, { r: 0.015 });                         // ダイニングテーブル
-  legs(2.28, -2.12, 4.32, -1.08, 0.7, 0.08, M.wood);
-  const chair = (x, z, back) => {   // back: 背もたれが+z側なら1、-z側なら-1
+  piece('WoodenTable_01', [2.2, -2.05, 4.4, -1.15, 0, 0.75], 0, () => {                // ダイニングテーブル
+    B(2.2, -2.05, 4.4, -1.15, 0.7, 0.75, M.wood, { r: 0.015 }); legs(2.28, -1.97, 4.32, -1.23, 0.7, 0.08, M.wood);
+  });
+  const chair = (x, z, back) => piece('dining_chair_02', [x - 0.23, z - 0.27, x + 0.23, z + 0.27, 0, 0.96], back > 0 ? Math.PI : 0, () => {   // back: 背もたれが+z側なら1、-z側なら-1
     B(x - 0.21, z - 0.21, x + 0.21, z + 0.21, 0.4, 0.45, M.woodLight, { r: 0.012 });
     legs(x - 0.2, z - 0.2, x + 0.2, z + 0.2, 0.4, 0.04, M.woodLight);
     const bz = z + back * 0.19;
     B(x - 0.21, bz - 0.02, x + 0.21, bz + 0.02, 0.6, 0.92, M.woodLight, { r: 0.012 });
     V(x - 0.2, bz - 0.02, x - 0.16, bz + 0.02, 0.45, 0.6, M.woodLight); V(x + 0.16, bz - 0.02, x + 0.2, bz + 0.02, 0.45, 0.6, M.woodLight);
-  };
-  chair(2.8, -2.55, -1); chair(3.8, -2.55, -1); chair(2.8, -0.65, 1); chair(3.8, -0.65, 1);
+  });
+  chair(2.8, -2.42, -1); chair(3.8, -2.42, -1); chair(2.8, -0.78, 1); chair(3.8, -0.78, 1);
   cyl(3.3, -1.6, 0.09, 0.75, 0.95, std(0x9fc4d8, { roughness: 0.1, transparent: true, opacity: 0.7 }), 0.06);   // 花瓶
   cyl(8.9, 0.2, 0.46, 0, 0.1, std(0x6b4a38, { roughness: 1 }), 0.4);                // 犬のベッド
   cyl(8.9, 0.2, 0.33, 0.06, 0.12, M.cushion, 0.33);
@@ -552,8 +596,10 @@ export function buildWorld(scene) {
 
   // ── 廊下 ──
   B(9.5, 1.3, 9.98, 2.7, 0, 0.9, std(0xffffff, { map: doorsTex('#c9a373', '#8f6c44', 1), roughness: 0.6 }));   // 下駄箱
-  B(-0.7, 2.6, 0.7, 2.88, 0.72, 0.76, M.woodDark); legs(-0.68, 2.62, 0.68, 2.86, 0.72, 0.04, M.woodDark);       // コンソール
-  cyl(-0.3, 2.74, 0.06, 0.76, 1.0, M.pot, 0.035);
+  piece('ClassicConsole_01', [-0.75, 2.4, 0.75, 2.9, 0, 0.86], Math.PI, () => {                                  // コンソール
+    B(-0.7, 2.43, 0.7, 2.88, 0.8, 0.86, M.woodDark); legs(-0.68, 2.45, 0.68, 2.86, 0.8, 0.04, M.woodDark);
+  });
+  cyl(-0.3, 2.66, 0.06, 0.86, 1.1, M.pot, 0.035);
   V(-9.99, 1.45, -9.95, 2.55, 0, 2.05, std(0x6b4630, { roughness: 0.5 }), { cast: false });                     // 玄関ドア
   cyl(-9.93, 2.4, 0.02, 1.0, 1.04, M.metal);
   plane(-9.7, 1.6, -8.9, 2.4, 0.005, std(0x4b5a44, { roughness: 1 }));
@@ -561,16 +607,18 @@ export function buildWorld(scene) {
 
   // ── 寝室 ──
   plane(-7.5, 3.9, -5.5, 6.1, 0.006, std(0xffffff, { map: rugTex('#b8ad9a', '#8d7f66', '#f0e9da'), roughness: 1 }));
+  piece('GothicBed_01', [-9.98, 4.12, -7.68, 5.88, 0, 1.7], Math.PI / 2, () => {
   V(-9.75, 4.2, -7.7, 5.8, 0.2, 0.32, M.woodLight); V(-9.72, 4.23, -7.72, 5.77, 0.32, 0.55, M.linen, { r: 0.07 });   // ベッド
   V(-8.9, 4.19, -7.69, 5.81, 0.46, 0.6, M.duvet, { r: 0.06 });
   V(-9.62, 4.35, -9.12, 4.95, 0.53, 0.66, M.white, { r: 0.06 }); V(-9.62, 5.05, -9.12, 5.65, 0.53, 0.66, M.white, { r: 0.06 });
   col(-9.75, 4.2, -7.7, 5.8, 0.2, 0.58);
   B(-9.98, 4.15, -9.75, 5.85, 0, 1.05, M.woodLight, { r: 0.02 });
   legs(-9.7, 4.25, -7.75, 5.75, 0.2, 0.08, M.woodDark);
-  B(-9.98, 6.0, -9.5, 6.5, 0, 0.5, M.woodLight);                                    // ナイトテーブル
-  cyl(-9.74, 6.25, 0.07, 0.5, 0.56, M.steelDark); cyl(-9.74, 6.25, 0.012, 0.56, 0.75, M.steelDark); cyl(-9.74, 6.25, 0.12, 0.72, 0.9, M.lamp, 0.08, false);
+  });
+  piece('ClassicNightstand_01', [-9.98, 5.97, -9.48, 6.53, 0, 0.6], Math.PI / 2, () => { B(-9.98, 6.0, -9.5, 6.5, 0, 0.6, M.woodLight); });   // ナイトテーブル
+  cyl(-9.74, 6.25, 0.07, 0.6, 0.66, M.steelDark); cyl(-9.74, 6.25, 0.012, 0.66, 0.85, M.steelDark); cyl(-9.74, 6.25, 0.12, 0.82, 1.0, M.lamp, 0.08, false);
   B(-5.5, 6.4, -3.5, 6.98, 0, 2.05, std(0xffffff, { map: doorsTex('#d9c7a6', '#a08a63', 3), roughness: 0.6 }));   // 洋服ダンス
-  B(-2.7, 3.9, -2.12, 5.3, 0, 0.8, std(0xffffff, { map: doorsTex('#d9c7a6', '#a08a63', 1), roughness: 0.6 }));    // チェスト
+  piece('drawer_cabinet', [-2.7, 3.9, -2.12, 5.3, 0, 1.9], -Math.PI / 2, () => { B(-2.7, 3.9, -2.12, 5.3, 0, 1.9, std(0xffffff, { map: doorsTex('#d9c7a6', '#a08a63', 1), roughness: 0.6 })); });    // 引き出し棚
 
   // ── 書斎 ──
   B(0.4, 6.3, 2.2, 6.97, 0.72, 0.76, M.woodLight, { r: 0.012 }); legs(0.44, 6.33, 2.16, 6.93, 0.72, 0.05, M.steelDark);   // 机
@@ -587,15 +635,17 @@ export function buildWorld(scene) {
   // ── 洗面・物置 ──
   const washer = (z0) => {
     B(9.2, z0, 9.97, z0 + 0.72, 0, 0.9, M.white, { r: 0.03 });
-    const d = new THREE.Mesh(new THREE.CircleGeometry(0.2, 24), M.glass); d.position.set(9.195, 0.48, z0 + 0.36); d.rotation.y = -Math.PI / 2; scene.add(d);
+    const d = new THREE.Mesh(new THREE.CircleGeometry(0.2, 24), M.glass); d.position.set(9.195, 0.48, z0 + 0.36); d.rotation.y = -Math.PI / 2; parent.add(d);
   };
   washer(4.9); washer(5.7);
+  piece('steel_frame_shelves_01', [[5.14, 4.2, 5.56, 5.0, 0, 1.8], [5.14, 5.0, 5.56, 5.8, 0, 1.8], [5.14, 5.8, 5.56, 6.6, 0, 1.8]], Math.PI / 2, () => {
   V(5.15, 4.2, 5.55, 6.6, 0, 0.04, M.steelDark);                                    // スチールラック
   for (const y of [0.45, 0.9, 1.35, 1.8]) V(5.15, 4.2, 5.55, 6.6, y - 0.03, y, M.steelDark);
   for (const [x, z] of [[5.15, 4.2], [5.52, 4.2], [5.15, 6.57], [5.52, 6.57]]) V(x, z, x + 0.03, z + 0.03, 0, 1.8, M.steelDark);
   col(5.15, 4.2, 5.55, 6.6, 0, 1.8);
   const R = rng(99);
   for (const y of [0.04, 0.45, 0.9, 1.35]) for (let z = 4.3; z < 6.3; z += 0.5) if (R() < 0.75) V(5.2, z, 5.5, z + 0.3 + R() * 0.12, y, y + 0.18 + R() * 0.16, R() < 0.5 ? M.card : std(new THREE.Color().setHSL(R(), 0.35, 0.55)));
+  });
   B(7, 6.3, 7.6, 6.9, 0, 0.5, M.wicker, { r: 0.04 });                               // 洗濯かご
   B(9.2, 3.3, 9.8, 3.9, 0, 0.45, M.card);
   plane(7, 4.6, 8.4, 5.4, 0.006, std(0x7fa3b8, { roughness: 1 }));
@@ -615,7 +665,33 @@ export function buildWorld(scene) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(colr, 4)); g.setIndex(idx);
     const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
-    m.renderOrder = 1; scene.add(m);
+    m.renderOrder = 1; parent.add(m);
   }
   return { lights };
+}
+
+/** 実写の3Dモデル・テクスチャを読み込んで差し替える。失敗したものは簡易版のまま残る */
+export async function loadAssets(scene, onProgress) {
+  const L = new GLTFLoader(), TL = new THREE.TextureLoader(), models = {};
+  const ids = [...new Set(slots.map((s) => s.id)), 'street_rat'];
+  let done = 0; const total = ids.length + texJobs.length, tick = () => onProgress(++done / total);
+  await Promise.all([
+    ...ids.map((id) => L.loadAsync(`assets/glb/${id}.glb`).then((g) => { models[id] = g.scene; }).catch(() => {}).then(tick)),
+    ...texJobs.map((j) => TL.loadAsync(j.url).then(j.apply).catch(() => {}).then(tick)),
+  ]);
+  const size = new THREE.Vector3(), bb = new THREE.Box3();
+  for (const s of slots) {
+    const src = models[s.id]; if (!src) continue;
+    const w = new THREE.Group(), turn = new THREE.Group(); turn.rotation.y = s.rot; turn.add(src.clone(true)); w.add(turn);
+    bb.setFromObject(w); bb.getSize(size);
+    const [x0, z0, x1, z1, y0, y1] = s.box, sx = (x1 - x0) / size.x, sy = (y1 - y0) / size.y, sz = (z1 - z0) / size.z;
+    w.scale.set(sx, sy, sz); w.position.set(x0 - bb.min.x * sx, y0 - bb.min.y * sy, z0 - bb.min.z * sz);
+    w.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
+    scene.add(w); if (s.fallback.parent) scene.remove(s.fallback);
+  }
+  // 人物の服地（デニム）
+  const cloth = {};
+  await Promise.all([['diff', true], ['nor_gl', false]].map(([k, srgb]) => TL.loadAsync(`assets/textures/denim_fabric/denim_fabric_${k}_1k.jpg`).then((t) => {
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 3); if (srgb) t.colorSpace = THREE.SRGBColorSpace; cloth[k] = t; }).catch(() => {})));
+  return { rat: models.street_rat || null, cloth };
 }

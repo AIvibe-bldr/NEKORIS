@@ -211,6 +211,10 @@ export function animateMouse(m, dt, speed) {
   for (let i = 0; i < m.tail.length; i++) { m.tail[i].rotation.y = Math.sin(m.t * 2.2 - i * 0.8) * 0.22; m.tail[i].rotation.x = i === 0 ? 0.2 : -0.04; }
 }
 
+let cloth = null;
+/** 服に使う実写の布テクスチャを設定する */
+export function setCloth(c) { cloth = c && c.nor_gl ? c : null; }
+
 export function buildPerson(i = 0) {
   const v = [
     { shirt: 0x3f6f9f, pants: 0x2b3345, hair: 0x2a1c12, skin: 0xe3b28f, shoe: 0x8a8f96, s: 1.0 },
@@ -218,7 +222,12 @@ export function buildPerson(i = 0) {
     { shirt: 0x5f8f5a, pants: 0x3a4a5f, hair: 0x15110f, skin: 0xd9a57f, shoe: 0x444444, s: 0.97 },
   ][i % 3];
   const g = new THREE.Group(), body = new THREE.Group(); g.add(body); g.scale.setScalar(v.s);
-  const shirt = std(v.shirt), pants = std(v.pants), skin = std(v.skin, { roughness: 0.7 }), hair = std(v.hair, { roughness: 0.8 }), shoe = std(v.shoe, { roughness: 0.8 });
+  const shirt = std(v.shirt), pants = std(v.pants);
+  if (cloth) {                                   // ズボンはデニム、シャツは織り目だけ借りる
+    pants.map = cloth.diff || null; pants.normalMap = cloth.nor_gl; pants.color.set(v.pants).lerp(new THREE.Color(0xffffff), 0.45);
+    shirt.normalMap = cloth.nor_gl; shirt.normalScale = new THREE.Vector2(0.6, 0.6);
+  }
+  const skin = std(v.skin, { roughness: 0.7 }), hair = std(v.hair, { roughness: 0.8 }), shoe = std(v.shoe, { roughness: 0.8 });
   part(capY(0.15, 0.36), shirt, body, 0, 1.2, 0, 1.12, 1, 0.76);
   part(SPH, pants, body, 0, 0.96, 0, 0.175, 0.14, 0.125);
   part(capY(0.045, 0.06), skin, body, 0, 1.56, 0);
@@ -296,4 +305,12 @@ export function makeBlob(r, opacity = 0.42) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(r * 2, r * 2), new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, opacity, depthWrite: false }));
   m.rotation.x = -Math.PI / 2; m.renderOrder = 2;
   return m;
+}
+
+/** 実写スキャンのネズミから個体を作る */
+export function buildMouseFrom(proto) {
+  const g = new THREE.Group(), body = new THREE.Group(), m = proto.clone(true); g.add(body);
+  m.scale.setScalar(1.9); m.position.z = 0.065; body.add(m);
+  m.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  return { group: g, body, tail: [], t: Math.random() * 10 };
 }

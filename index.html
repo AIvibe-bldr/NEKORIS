@@ -58,6 +58,7 @@
   #oBtn { margin-top: 14px; pointer-events: auto; border: 0; border-radius: 999px; padding: 14px 44px; font: 800 19px/1 inherit; font-family: inherit;
     color: #2a1a08; background: linear-gradient(#ffd98a, #ffb13d); box-shadow: 0 6px 20px rgba(255, 170, 50, .35); cursor: pointer; }
   #oBtn:active { transform: translateY(2px); }
+  #oBtn:disabled { filter: grayscale(.7); opacity: .75; }
   @media (max-height: 460px) { #panel { padding: 14px 18px; } #panel ul { font-size: 12.5px; line-height: 1.55; margin: 6px auto; } #panel p { margin: 4px 0; font-size: 13px; } #oBtn { margin-top: 8px; padding: 11px 36px; } }
   @media (orientation: portrait) { #stick { bottom: 130px; } #bJump { bottom: max(96px, calc(env(safe-area-inset-bottom) + 80px)); } #bDash { bottom: max(80px, calc(env(safe-area-inset-bottom) + 64px)); } #stam { bottom: max(34px, calc(env(safe-area-inset-bottom) + 18px)); } #msg { top: 26%; } }
   @media (max-width: 520px) { #map { width: 120px; height: 84px; } #stats { max-width: calc(100% - 136px); } #stats span { font-size: 13px; padding: 4px 9px; } }
